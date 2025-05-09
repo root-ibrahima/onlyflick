@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:MatchMaker/features/home/presentation/pages/home_page.dart';
 import 'package:MatchMaker/features/start/presentation/pages/start_page.dart';
