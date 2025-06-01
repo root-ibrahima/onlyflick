@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:MatchMaker/core/config/theme.dart';
+import 'package:matchmaker/core/config/theme.dart';
 import 'router.dart';
 
 class OnlyFlickApp extends StatelessWidget {

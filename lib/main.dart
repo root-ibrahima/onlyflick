@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:MatchMaker/features/home/presentation/pages/search_page.dart';
+import 'package:matchmaker/features/home/presentation/pages/search_page.dart';
 
 void main() {
   runApp(const OnlyFlickApp());
@@ -11,7 +11,7 @@ class OnlyFlickApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'OnlyFlick',
+      title: 'MatchMaker',
       theme: ThemeData.dark(useMaterial3: true),
       home: const MainScreen(),
     );
@@ -82,7 +82,7 @@ class FeedScreen extends StatelessWidget {
         const SafeArea(
           child: Padding(
             padding: EdgeInsets.all(16),
-            child: Text('OnlyFlick',
+            child: Text('MatchMaker',
                 style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
           ),
         ),
