@@ -1,23 +1,23 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: onlyflick-ingress
-  namespace: default
+  name: grafana-ingress
+  namespace: monitoring
   annotations:
     nginx.ingress.kubernetes.io/rewrite-target: /
-    nginx.ingress.kubernetes.io/ssl-redirect: "false"  # Mets à "true" si tu ajoutes TLS
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"  # Mets "true" si tu actives TLS
     nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
 spec:
   ingressClassName: nginx
   rules:
-    - host: onlyflick.local
+    - host: grafana.local
       http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: onlyflick-service
+                name: monitoring-grafana
                 port:
                   number: 80
