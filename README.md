@@ -92,7 +92,11 @@ Remplacez `<GRAFANA_URL>` et `<API_KEY>` par vos valeurs spécifiques.
 
 ### Déploiement Kubernetes (en local)
 
-1. Démarrer Minikube ou KinD
+1. Démarrer kubernetes
+
+    ```bash
+    kubectl port-forward svc/monitoring-grafana -n monitoring 3000:80
+    ```
 
 2. Installer Prometheus et Grafana via Helm :
 
