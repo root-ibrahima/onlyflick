@@ -1,10 +1,12 @@
 # OnlyFlick
 
-OnlyFlick est une application Flutter conçue pour [brève description ici, par exemple : permettre le streaming, la gestion ou la découverte de contenus multimédia dans un environnement distribué].
+OnlyFlick est une application Flutter Web conçue pour permettre la découverte, la visualisation et l'interaction avec du contenu multimédia dans un environnement distribué et scalable. Le projet s'appuie sur une infrastructure Kubernetes et un système de monitoring complet pour garantir performance, résilience et observabilité.
 
 ## Getting Started
 
 ### Prérequis
+
+Avant de démarrer, assurez-vous d'avoir installé :
 
 - [Flutter](https://flutter.dev/docs/get-started/install)
 - [Chrome browser](https://www.google.com/chrome/) (pour le développement web)
@@ -13,77 +15,71 @@ OnlyFlick est une application Flutter conçue pour [brève description ici, par 
 - [Helm](https://helm.sh/)
 - [Grafana](https://grafana.com/)
 - [Prometheus](https://prometheus.io/)
+- (Optionnel) [minikube](https://minikube.sigs.k8s.io/) ou [KinD](https://kind.sigs.k8s.io/)
 
 ### Installation de l'application Flutter
 
-1. Cloner le dépôt
+1. Cloner le dépôt :
 
     ```bash
     git clone https://github.com/ibrahima-eemi/onlyflick.git
     cd onlyflick
     ```
 
-2. Nettoyer le projet
+2. Nettoyer le projet :
 
     ```bash
     flutter clean
     ```
 
-3. Installer les dépendances
+3. Installer les dépendances :
 
     ```bash
     flutter pub get
     ```
 
-### Lancement de l'application Flutter
+4. Lancer l'application dans Chrome :
 
-Pour exécuter l'application dans Chrome :
-
-```bash
-flutter run -d chrome
-```
+    ```bash
+    flutter run -d chrome
+    ```
 
 ## Fonctionnalités de l'application
 
-- [Fonctionnalité 1]
-- [Fonctionnalité 2]
-- [Fonctionnalité 3]
+- Interface web développée avec Flutter
+- Composants interactifs simulant une expérience utilisateur multimédia
+- Architecture scalable, pensée pour un futur backend en Go
+- Prête à être containerisée et déployée en environnement cloud
 
-## Infrastructure Kubernetes & Monitoring
+## Infrastructure Kubernetes et Monitoring
 
-Le projet intègre un environnement Kubernetes pour le déploiement de l'application, accompagné d'un système de monitoring complet avec Prometheus et Grafana.
+Le projet est conçu pour tourner sur un cluster Kubernetes avec un monitoring natif intégré via Prometheus et Grafana.
 
-### Services inclus
+### Services déployés
 
-- **Prometheus** : collecte des métriques systèmes, applicatives et Kubernetes
-- **Grafana** : visualisation des données, dashboards personnalisés
-- **Kube-State-Metrics** : expose les états de ressources Kubernetes
-- **Node Exporter** : expose les métriques système (CPU, RAM, disque)
+- **Prometheus** : collecte des métriques système, applicatives et Kubernetes
+- **Grafana** : visualisation des métriques via dashboards dynamiques
+- **Kube-State-Metrics** : expose les états des ressources Kubernetes
+- **Node Exporter** : expose les métriques des nœuds (CPU, mémoire, disque)
 
 ### Dashboards Grafana
 
-Un dossier dédié contient les dashboards pour le monitoring :
-
-Chemin : `grafana/dashboards/`
-
 #### Dashboard principal
 
-`devops_dashboard_grafana.json` :
-Dashboard combiné incluant :
+- **Chemin** : `grafana/dashboards/devops_dashboard_grafana.json`
+- **Contenu** :
+  - Métriques système : CPU, RAM, disque, uptime
+  - Métriques Kubernetes : pods, nodes, namespaces
+  - Variables dynamiques pour filtrage
 
-- Métriques système (CPU, mémoire, disque, uptime)
-- Métriques Kubernetes (pods, nodes, namespaces)
-- Variables dynamiques pour filtrage
+##### Import manuel dans Grafana
 
-#### Import manuel
+1. Ouvrir Grafana (ex: http://grafana.local:3000)
+2. Aller dans Dashboards > Import
+3. Cliquer sur Upload JSON file
+4. Sélectionner le fichier `grafana/dashboards/devops_dashboard_grafana.json`
 
-Depuis Grafana :
-
-1. Aller dans Dashboards > Import
-2. Cliquer sur Upload JSON file
-3. Sélectionner `grafana/dashboards/devops_dashboard_grafana.json`
-
-#### Import via API Grafana
+##### Import via API Grafana
 
 ```bash
 curl -X POST http://<GRAFANA_URL>/api/dashboards/db \
@@ -92,13 +88,13 @@ curl -X POST http://<GRAFANA_URL>/api/dashboards/db \
   --data-binary @grafana/dashboards/devops_dashboard_grafana.json
 ```
 
-Remplacer `<GRAFANA_URL>` et `<API_KEY>` par vos valeurs
+Remplacez `<GRAFANA_URL>` et `<API_KEY>` par vos valeurs spécifiques.
 
-### Déploiement Kubernetes (exemple local)
+### Déploiement Kubernetes (en local)
 
 1. Démarrer Minikube ou KinD
 
-2. Déployer Prometheus + Grafana via Helm :
+2. Installer Prometheus et Grafana via Helm :
 
     ```bash
     helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
@@ -108,15 +104,22 @@ Remplacer `<GRAFANA_URL>` et `<API_KEY>` par vos valeurs
       --namespace monitoring --create-namespace
     ```
 
-3. Appliquer les ingress pour exposer les services :
+3. Appliquer les Ingress pour exposer les services :
 
     ```bash
     kubectl apply -f k8s/grafana-ingress.yaml
     kubectl apply -f k8s/onlyflick-ingress.yaml
     ```
 
-4. Ajouter les entrées dans `/etc/hosts` si besoin :
+4. Ajouter les entrées dans `/etc/hosts` :
 
-    ```txt
+    ```
     127.0.0.1 grafana.local onlyflick.local
     ```
+
+## À venir
+
+- Intégration backend Go
+- Export de métriques personnalisées
+- Logging centralisé avec Loki
+- Déploiement CI/CD automatisé
