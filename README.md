@@ -74,7 +74,7 @@ Le projet est conçu pour tourner sur un cluster Kubernetes avec un monitoring n
 
 ##### Import manuel dans Grafana
 
-1. Ouvrir Grafana (ex: http://grafana.local:3000)
+1. Ouvrir Grafana ex: `http://grafana.local:3000`
 2. Aller dans Dashboards > Import
 3. Cliquer sur Upload JSON file
 4. Sélectionner le fichier `grafana/dashboards/devops_dashboard_grafana.json`
@@ -113,7 +113,7 @@ Remplacez `<GRAFANA_URL>` et `<API_KEY>` par vos valeurs spécifiques.
 
 4. Ajouter les entrées dans `/etc/hosts` :
 
-    ```
+    ```txt
     127.0.0.1 grafana.local onlyflick.local
     ```
 
