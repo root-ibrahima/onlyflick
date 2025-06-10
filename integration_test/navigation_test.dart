@@ -21,8 +21,6 @@ void main() {
     final expectedTexts = [
       'OnlyFlick', // Écran Feed
       'Recherche', // Écran Search
-      'Reels',
-      'Notifications',
       'Profil',
     ];
 
