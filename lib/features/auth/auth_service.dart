@@ -1,7 +1,8 @@
 class AuthService {
-  // Simule une base d'utilisateurs
+  // Simule une base d'utilisateurs avec un compte de démo
   final Map<String, String> _users = {
     'user@test.com': 'password123',
+    'demoUser': 'demoPassword', // 💡 utilisateur de démo ajouté
   };
 
   bool login(String email, String password) {
@@ -15,6 +16,6 @@ class AuthService {
   }
 
   void logout() {
-    // Logique de déconnexion (ex : clear session, token, etc.)
+    // Simulation d'une déconnexion
   }
 }
