@@ -8,7 +8,7 @@ class OnlyFlickApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
-      title: 'MatchMaker',
+      title: 'OnlyFlick',
       theme: appTheme,
       darkTheme: appTheme, // Using the same theme for dark mode until a dark theme is defined
       themeMode: ThemeMode.system,

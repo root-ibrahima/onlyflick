@@ -1,19 +1,26 @@
+import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:matchmaker/features/home/presentation/pages/home_page.dart';
-import 'package:matchmaker/features/start/presentation/pages/start_page.dart';
+import 'package:matchmaker/features/home/presentation/pages/main_screen.dart';
+import 'package:matchmaker/features/auth/presentation/pages/login_page.dart';
+import 'package:matchmaker/features/auth/presentation/pages/register_page.dart';
 
 final GoRouter router = GoRouter(
-  initialLocation: '/',
+  initialLocation: '/login',
   routes: [
     GoRoute(
       path: '/',
-      name: 'home',
-      builder: (context, state) => const HomePage(),
+      name: 'main',
+      builder: (BuildContext context, GoRouterState state) => const MainScreen(),
     ),
     GoRoute(
-      path: '/start',
-      name: 'start',
-      builder: (context, state) => const StartPage(),
+      path: '/login',
+      name: 'login',
+      builder: (BuildContext context, GoRouterState state) => const LoginPage(),
+    ),
+    GoRoute(
+      path: '/register',
+      name: 'register',
+      builder: (BuildContext context, GoRouterState state) => const RegisterPage(),
     ),
   ],
 );
