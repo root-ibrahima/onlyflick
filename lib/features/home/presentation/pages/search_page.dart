@@ -109,7 +109,8 @@ class _SearchScreenState extends State<SearchScreen> {
                       const Positioned(
                         top: 6,
                         right: 6,
-                        child: Icon(Icons.video_library, size: 16, color: Colors.white),
+                        child: Icon(Icons.video_library,
+                            size: 16, color: Colors.white),
                       )
                     ],
                   );
@@ -120,5 +121,14 @@ class _SearchScreenState extends State<SearchScreen> {
         ),
       ),
     );
+  }
+}
+
+class SearchPageWidget extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+        // ...existing code...
+        );
   }
 }
