@@ -4,7 +4,10 @@ import 'package:go_router/go_router.dart';
 
 import 'package:matchmaker/app/router.dart';
 import 'package:matchmaker/features/auth/auth_provider.dart';
+import 'package:matchmaker/core/providers/posts_providers.dart';
+import 'package:matchmaker/core/services/app_initializer.dart';
 import 'package:matchmaker/core/services/api_service.dart';
+import 'package:matchmaker/core/providers/app_providers_wrapper.dart';
 
 void main() {
   runApp(const OnlyFlickBootstrap());
@@ -27,9 +30,21 @@ class OnlyFlickBootstrap extends StatelessWidget {
           return _ErrorScreen(error: snapshot.error.toString());
         }
 
-        return ChangeNotifierProvider(
-          create: (_) => AuthProvider()..checkAuth(),
-          child: const OnlyFlickApp(),
+        // Configuration des providers multiples
+        return MultiProvider(
+          providers: [
+            // Provider d'authentification
+            ChangeNotifierProvider(
+              create: (_) => AuthProvider()..checkAuth(),
+            ),
+            // Provider des posts
+            ChangeNotifierProvider(
+              create: (_) => PostsProvider(),
+            ),
+          ],
+          child: const AppProvidersWrapper(
+            child: OnlyFlickApp(),
+          ),
         );
       },
     );
@@ -49,7 +64,7 @@ class OnlyFlickBootstrap extends StatelessWidget {
   }
 }
 
-/// Application principale OnlyFlick - EXACTEMENT comme vous l'aviez
+/// Application principale OnlyFlick
 class OnlyFlickApp extends StatelessWidget {
   const OnlyFlickApp({super.key});
 
@@ -59,6 +74,7 @@ class OnlyFlickApp extends StatelessWidget {
       title: 'OnlyFlick',
       theme: ThemeData.dark(useMaterial3: true),
       routerConfig: router,
+      debugShowCheckedModeBanner: false,
     );
   }
 }
