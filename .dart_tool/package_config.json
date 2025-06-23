@@ -603,8 +603,8 @@
     }
   ],
   "generator": "pub",
-  "generatorVersion": "3.8.0",
+  "generatorVersion": "3.8.1",
   "flutterRoot": "file:///Users/mamadousoumare/Development/flutter",
-  "flutterVersion": "3.32.0",
+  "flutterVersion": "3.32.2",
   "pubCache": "file:///Users/mamadousoumare/.pub-cache"
 }
