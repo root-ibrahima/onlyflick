@@ -8,6 +8,7 @@ import 'package:matchmaker/core/providers/posts_providers.dart';
 import 'package:matchmaker/core/services/app_initializer.dart';
 import 'package:matchmaker/core/services/api_service.dart';
 import 'package:matchmaker/core/providers/app_providers_wrapper.dart';
+import './core/providers/profile_provider.dart';
 
 void main() {
   runApp(const OnlyFlickBootstrap());
@@ -30,14 +31,21 @@ class OnlyFlickBootstrap extends StatelessWidget {
           return _ErrorScreen(error: snapshot.error.toString());
         }
 
-        // Configuration des providers multiples
+        // ===== CONFIGURATION DES PROVIDERS MULTIPLES =====
         return MultiProvider(
           providers: [
-            // Provider d'authentification
+            // 🔐 Provider d'authentification (en premier car les autres en dépendent)
             ChangeNotifierProvider(
               create: (_) => AuthProvider()..checkAuth(),
             ),
-            // Provider des posts
+            
+            // 👤 Provider de profil (dépend d'AuthProvider)
+            ChangeNotifierProxyProvider<AuthProvider, ProfileProvider>(
+              create: (context) => ProfileProvider(context.read<AuthProvider>()),
+              update: (context, auth, previous) => previous ?? ProfileProvider(auth),
+            ),
+            
+            // 📝 Provider des posts
             ChangeNotifierProvider(
               create: (_) => PostsProvider(),
             ),
