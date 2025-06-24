@@ -28,12 +28,20 @@ class ApiService {
   final http.Client _client = http.Client();
   String? _token;
 
-  // Headers par défaut
+  // Headers par défaut pour les requêtes JSON
   Map<String, String> get _defaultHeaders => {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
         if (_token != null) 'Authorization': 'Bearer $_token',
       };
+
+  // Headers pour les requêtes avec authentification uniquement
+  Map<String, String> get _authOnlyHeaders => {
+        if (_token != null) 'Authorization': 'Bearer $_token',
+      };
+
+  /// Getter public pour accéder à l'URL de base
+  String get baseUrl => _baseUrl;
 
   /// Initialise le service avec le token stocké
   Future<void> initialize() async {
@@ -58,6 +66,9 @@ class ApiService {
 
   /// Récupère le token actuel
   String? get token => _token;
+
+  /// Vérifie si un token est disponible
+  bool get hasToken => _token != null;
 
   /// GET Request
   Future<ApiResponse<T>> get<T>(
@@ -97,7 +108,123 @@ class ApiService {
     return _makeRequest<T>('DELETE', endpoint, queryParams: queryParams, fromJson: fromJson);
   }
 
-  /// Méthode privée pour effectuer les requêtes HTTP
+  /// POST Request avec fichier multipart
+  Future<ApiResponse<T>> postMultipart<T>(
+    String endpoint, {
+    required Map<String, String> fields,
+    Map<String, File>? files,
+    T Function(Map<String, dynamic>)? fromJson,
+  }) async {
+    try {
+      final uri = _buildUri(endpoint, null);
+      debugPrint('🌐 POST MULTIPART ${uri.toString()}');
+      debugPrint('📤 Fields: $fields');
+      if (files != null) debugPrint('📎 Files: ${files.keys.toList()}');
+
+      final request = http.MultipartRequest('POST', uri);
+      
+      // Ajouter les headers d'authentification
+      request.headers.addAll(_authOnlyHeaders);
+      
+      // Ajouter les champs
+      request.fields.addAll(fields);
+      
+      // Ajouter les fichiers
+      if (files != null) {
+        for (final entry in files.entries) {
+          final file = entry.value;
+          final multipartFile = await http.MultipartFile.fromPath(
+            entry.key,
+            file.path,
+            filename: file.path.split('/').last,
+          );
+          request.files.add(multipartFile);
+        }
+      }
+      
+      // Envoyer la requête
+      final streamedResponse = await request.send().timeout(
+        const Duration(seconds: 30),
+      );
+      final response = await http.Response.fromStream(streamedResponse);
+      
+      debugPrint('📥 Response ${response.statusCode}: ${response.body}');
+      return _handleResponse<T>(response, fromJson);
+      
+    } on SocketException {
+      debugPrint('❌ No internet connection');
+      return ApiResponse.error('Pas de connexion internet');
+    } on HttpException {
+      debugPrint('❌ HTTP error occurred');
+      return ApiResponse.error('Erreur de communication avec le serveur');
+    } on FormatException {
+      debugPrint('❌ Bad response format');
+      return ApiResponse.error('Format de réponse invalide');
+    } catch (e) {
+      debugPrint('❌ Unexpected error: $e');
+      return ApiResponse.error('Erreur lors de l\'upload: $e');
+    }
+  }
+
+  /// PATCH Request avec fichier multipart
+  Future<ApiResponse<T>> patchMultipart<T>(
+    String endpoint, {
+    required Map<String, String> fields,
+    Map<String, File>? files,
+    T Function(Map<String, dynamic>)? fromJson,
+  }) async {
+    try {
+      final uri = _buildUri(endpoint, null);
+      debugPrint('🌐 PATCH MULTIPART ${uri.toString()}');
+      debugPrint('📤 Fields: $fields');
+      if (files != null) debugPrint('📎 Files: ${files.keys.toList()}');
+
+      final request = http.MultipartRequest('PATCH', uri);
+      
+      // Ajouter les headers d'authentification
+      request.headers.addAll(_authOnlyHeaders);
+      
+      // Ajouter les champs
+      request.fields.addAll(fields);
+      
+      // Ajouter les fichiers
+      if (files != null) {
+        for (final entry in files.entries) {
+          final file = entry.value;
+          final multipartFile = await http.MultipartFile.fromPath(
+            entry.key,
+            file.path,
+            filename: file.path.split('/').last,
+          );
+          request.files.add(multipartFile);
+        }
+      }
+      
+      // Envoyer la requête
+      final streamedResponse = await request.send().timeout(
+        const Duration(seconds: 30),
+      );
+      final response = await http.Response.fromStream(streamedResponse);
+      
+      debugPrint('📥 Response ${response.statusCode}: ${response.body}');
+      return _handleResponse<T>(response, fromJson);
+      
+    } on SocketException {
+      debugPrint('❌ No internet connection');
+      return ApiResponse.error('Pas de connexion internet');
+    } on HttpException {
+      debugPrint('❌ HTTP error occurred');
+      return ApiResponse.error('Erreur de communication avec le serveur');
+    } on FormatException {
+      debugPrint('❌ Bad response format');
+      return ApiResponse.error('Format de réponse invalide');
+    } catch (e) {
+      debugPrint('❌ Unexpected error: $e');
+      return ApiResponse.error('Erreur lors de la mise à jour: $e');
+    }
+  }
+
+  /// Méthode privée pour effectuer les requêtes HTTP standard
   Future<ApiResponse<T>> _makeRequest<T>(
     String method,
     String endpoint, {
@@ -117,7 +244,7 @@ class ApiService {
       switch (method.toUpperCase()) {
         case 'GET':
           response = await _client.get(uri, headers: headers).timeout(
-            const Duration(seconds: 10),
+            const Duration(seconds: 15),
           );
           break;
         case 'POST':
@@ -126,7 +253,7 @@ class ApiService {
             headers: headers,
             body: body != null ? jsonEncode(body) : null,
           ).timeout(
-            const Duration(seconds: 10),
+            const Duration(seconds: 15),
           );
           break;
         case 'PATCH':
@@ -135,12 +262,12 @@ class ApiService {
             headers: headers,
             body: body != null ? jsonEncode(body) : null,
           ).timeout(
-            const Duration(seconds: 10),
+            const Duration(seconds: 15),
           );
           break;
         case 'DELETE':
           response = await _client.delete(uri, headers: headers).timeout(
-            const Duration(seconds: 10),
+            const Duration(seconds: 15),
           );
           break;
         default:
@@ -184,6 +311,15 @@ class ApiService {
     final statusCode = response.statusCode;
     
     try {
+      // Gestion des réponses vides (comme pour DELETE)
+      if (response.body.isEmpty) {
+        if (statusCode >= 200 && statusCode < 300) {
+          return ApiResponse.success(null, statusCode);
+        } else {
+          return ApiResponse.error('Erreur serveur', statusCode);
+        }
+      }
+
       final jsonData = jsonDecode(response.body);
 
       // Gestion des réponses de succès (2xx)
@@ -221,6 +357,17 @@ class ApiService {
   void _handleUnauthorized() {
     debugPrint('⚠️ Unauthorized access - clearing token');
     setToken(null);
+  }
+
+  /// Test de connectivité avec le serveur
+  Future<bool> testConnection() async {
+    try {
+      final response = await get('/health');
+      return response.isSuccess;
+    } catch (e) {
+      debugPrint('❌ Connection test failed: $e');
+      return false;
+    }
   }
 
   /// Nettoyage des ressources
@@ -270,6 +417,40 @@ class ApiResponse<T> {
   /// Vérifie si c'est une erreur de validation
   bool get isValidationError => statusCode == 400;
 
+  /// Vérifie si c'est une erreur de permission
+  bool get isPermissionError => statusCode == 403;
+
+  /// Vérifie si c'est une erreur de ressource non trouvée
+  bool get isNotFoundError => statusCode == 404;
+
+  /// Vérifie si c'est une erreur serveur
+  bool get isServerError => statusCode != null && statusCode! >= 500;
+
+  /// Vérifie si c'est une erreur réseau/client
+  bool get isClientError => statusCode != null && statusCode! >= 400 && statusCode! < 500;
+
+  /// Message d'erreur formaté
+  String get errorMessage {
+    if (error != null) return error!;
+    if (statusCode != null) {
+      switch (statusCode!) {
+        case 400:
+          return 'Requête invalide';
+        case 401:
+          return 'Authentification requise';
+        case 403:
+          return 'Accès refusé';
+        case 404:
+          return 'Ressource non trouvée';
+        case 500:
+          return 'Erreur serveur';
+        default:
+          return 'Erreur HTTP $statusCode';
+      }
+    }
+    return 'Erreur inconnue';
+  }
+
   @override
   String toString() {
     if (isSuccess) {
@@ -277,5 +458,54 @@ class ApiResponse<T> {
     } else {
       return 'ApiResponse.error(error: $error, statusCode: $statusCode)';
     }
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is ApiResponse<T> &&
+        other.isSuccess == isSuccess &&
+        other.data == data &&
+        other.error == error &&
+        other.statusCode == statusCode;
+  }
+
+  @override
+  int get hashCode =>
+      isSuccess.hashCode ^
+      data.hashCode ^
+      error.hashCode ^
+      statusCode.hashCode;
+}
+
+/// Extensions utiles pour ApiResponse
+extension ApiResponseExtensions<T> on ApiResponse<T> {
+  /// Exécute une fonction si la réponse est un succès
+  R? onSuccess<R>(R Function(T data) callback) {
+    if (isSuccess && data != null) {
+      return callback(data!);
+    }
+    return null;
+  }
+
+  /// Exécute une fonction si la réponse est une erreur
+  R? onError<R>(R Function(String error, int? statusCode) callback) {
+    if (isError && error != null) {
+      return callback(error!, statusCode);
+    }
+    return null;
+  }
+
+  /// Transforme les données en un autre type
+  ApiResponse<R> map<R>(R Function(T data) mapper) {
+    if (isSuccess && data != null) {
+      try {
+        final mappedData = mapper(data!);
+        return ApiResponse.success(mappedData, statusCode);
+      } catch (e) {
+        return ApiResponse.error('Error mapping data: $e', statusCode);
+      }
+    }
+    return ApiResponse.error(error ?? 'No data to map', statusCode);
   }
 }

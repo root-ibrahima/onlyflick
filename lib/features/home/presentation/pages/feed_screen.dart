@@ -1,13 +1,19 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../../../auth/auth_provider.dart';
+import 'package:provider/provider.dart';
+import '../../../../../features/auth/auth_provider.dart';
 import '../../../../core/providers/posts_providers.dart';
-
 import '../widgets/connected_post_widget.dart';
 
 class FeedScreen extends StatefulWidget {
-  const FeedScreen({super.key});
+  final bool isCreator;
+  final VoidCallback? onCreatePost;
+
+  const FeedScreen({
+    super.key, 
+    this.isCreator = false,
+    this.onCreatePost,
+  });
 
   @override
   State<FeedScreen> createState() => _FeedScreenState();
@@ -44,6 +50,7 @@ class _FeedScreenState extends State<FeedScreen> {
         content: Text(message),
         backgroundColor: isError ? Colors.red : Colors.green,
         behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
     );
   }
@@ -55,14 +62,18 @@ class _FeedScreenState extends State<FeedScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            _buildHeader(),
+            // Header moderne avec bouton +
+            _buildModernHeader(),
+            
+            // Feed avec vraies données
             Expanded(
               child: Consumer<PostsProvider>(
                 builder: (context, postsProvider, _) {
                   return RefreshIndicator(
                     onRefresh: _handleRefresh,
                     color: Colors.black,
-                    child: _buildContent(postsProvider),
+                    backgroundColor: Colors.white,
+                    child: _buildFeedContent(postsProvider),
                   );
                 },
               ),
@@ -73,51 +84,135 @@ class _FeedScreenState extends State<FeedScreen> {
     );
   }
 
-  Widget _buildHeader() {
+  /// Header moderne avec logo OnlyFlick et actions (bouton + pour créateurs)
+  Widget _buildModernHeader() {
     return Consumer<AuthProvider>(
       builder: (context, authProvider, _) {
         final user = authProvider.user;
+        final isCreator = user?.isCreator == true;
         
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             color: Colors.white,
-            border: Border(
-              bottom: BorderSide(color: Colors.black12, width: 0.5),
-            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                offset: const Offset(0, 2),
+                blurRadius: 8,
+              ),
+            ],
           ),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'OnlyFlick',
-                style: GoogleFonts.pacifico(
-                  fontSize: 24,
-                  color: Colors.black,
-                ),
-              ),
-              Row(
-                children: [
-                  // Badge de rôle
-                  if (user != null)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: _getRoleColor(user.role).withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: _getRoleColor(user.role), width: 0.5),
+              // Logo OnlyFlick
+              Expanded(
+                child: Row(
+                  children: [
+                    Text(
+                      'OnlyFlick',
+                      style: GoogleFonts.pacifico(
+                        fontSize: 28,
+                        color: Colors.black,
+                        fontWeight: FontWeight.w400,
                       ),
-                      child: Text(
-                        _getRoleLabel(user.role),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Colors.purple, Colors.pink],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Text(
+                        'BETA',
                         style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                          color: _getRoleColor(user.role),
+                          fontSize: 8,
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
                     ),
-                  const SizedBox(width: 12),
-                  const Icon(Icons.chat_bubble_outline, color: Colors.black),
+                  ],
+                ),
+              ),
+
+              // Actions à droite
+              Row(
+                children: [
+                  // Badge Créateur (si applicable)
+                  if (isCreator) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Colors.purple.withOpacity(0.1), Colors.pink.withOpacity(0.1)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Colors.purple.withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.star, size: 14, color: Colors.purple[600]),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Créateur',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.purple[600],
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                  ],
+
+                  // Bouton de création (pour les créateurs) - PLACÉ ICI
+                  if (isCreator && widget.onCreatePost != null) ...[
+                    GestureDetector(
+                      onTap: widget.onCreatePost,
+                      child: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.black,
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.2),
+                              offset: const Offset(0, 2),
+                              blurRadius: 8,
+                            ),
+                          ],
+                        ),
+                        child: const Icon(Icons.add, color: Colors.white, size: 20),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                  ],
+
+                  // Bouton Messages
+                  GestureDetector(
+                    onTap: () {
+                      // TODO: Navigation vers messages
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[100],
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.message_outlined, color: Colors.black, size: 20),
+                    ),
+                  ),
                 ],
               ),
             ],
@@ -127,140 +222,97 @@ class _FeedScreenState extends State<FeedScreen> {
     );
   }
 
-  Widget _buildContent(PostsProvider postsProvider) {
-    switch (postsProvider.state) {
-      case FeedState.initial:
-      case FeedState.loading:
-        return _buildLoadingState();
-      
-      case FeedState.error:
-        return _buildErrorState(postsProvider);
-      
-      case FeedState.loaded:
-      case FeedState.refreshing:
-        if (postsProvider.posts.isEmpty) {
-          return _buildEmptyState();
-        }
-        return _buildPostsList(postsProvider);
+  /// Contenu du feed avec vraies données API
+  Widget _buildFeedContent(PostsProvider postsProvider) {
+    if (postsProvider.isLoading && !postsProvider.hasData) {
+      return const Center(
+        child: CircularProgressIndicator(
+          color: Colors.black,
+        ),
+      );
     }
-  }
 
-  Widget _buildLoadingState() {
-    return const Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          CircularProgressIndicator(color: Colors.black),
-          SizedBox(height: 16),
-          Text(
-            'Chargement du feed...',
-            style: TextStyle(
-              fontSize: 16,
-              color: Colors.grey,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildErrorState(PostsProvider postsProvider) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
+    if (postsProvider.hasError && !postsProvider.hasData) {
+      return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(
+            Icon(
               Icons.error_outline,
               size: 64,
-              color: Colors.red,
+              color: Colors.grey[400],
             ),
             const SizedBox(height: 16),
-            const Text(
+            Text(
               'Erreur de chargement',
               style: TextStyle(
-                fontSize: 20,
+                fontSize: 18,
                 fontWeight: FontWeight.bold,
+                color: Colors.grey[600],
               ),
             ),
             const SizedBox(height: 8),
             Text(
-              postsProvider.error ?? 'Une erreur inattendue s\'est produite',
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 14,
-                color: Colors.grey,
+              postsProvider.error ?? 'Une erreur est survenue',
+              style: TextStyle(
+                color: Colors.grey[500],
               ),
+              textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
+            const SizedBox(height: 16),
+            ElevatedButton(
               onPressed: () => postsProvider.retry(),
-              icon: const Icon(Icons.refresh),
-              label: const Text('Réessayer'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.black,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              child: const Text(
+                'Réessayer',
+                style: TextStyle(color: Colors.white),
               ),
             ),
           ],
         ),
-      ),
-    );
-  }
+      );
+    }
 
-  Widget _buildEmptyState() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
+    if (!postsProvider.hasData) {
+      return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(
+            Icon(
               Icons.photo_library_outlined,
               size: 64,
-              color: Colors.grey,
+              color: Colors.grey[400],
             ),
             const SizedBox(height: 16),
-            const Text(
-              'Aucun post disponible',
+            Text(
+              'Aucun post à afficher',
               style: TextStyle(
-                fontSize: 20,
+                fontSize: 18,
                 fontWeight: FontWeight.bold,
+                color: Colors.grey[600],
               ),
             ),
             const SizedBox(height: 8),
-            const Text(
-              'Il n\'y a pas encore de contenu à afficher.\nTirez vers le bas pour actualiser.',
-              textAlign: TextAlign.center,
+            Text(
+              'Les posts apparaîtront ici',
               style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey,
-              ),
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: () => _postsProvider.refreshPosts(),
-              icon: const Icon(Icons.refresh),
-              label: const Text('Actualiser'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.black,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                color: Colors.grey[500],
               ),
             ),
           ],
         ),
-      ),
-    );
-  }
+      );
+    }
 
-  Widget _buildPostsList(PostsProvider postsProvider) {
+    // Affichage des posts avec les vraies données
     return ListView.builder(
       controller: _scrollController,
-      physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.only(bottom: 16),
+      physics: const BouncingScrollPhysics(),
       itemCount: postsProvider.posts.length + (postsProvider.isRefreshing ? 1 : 0),
       itemBuilder: (context, index) {
         // Indicateur de chargement en haut pendant le refresh
@@ -302,27 +354,4 @@ class _FeedScreenState extends State<FeedScreen> {
     );
   }
 
-  String _getRoleLabel(String role) {
-    switch (role) {
-      case 'creator':
-        return 'Créateur';
-      case 'admin':
-        return 'Admin';
-      case 'subscriber':
-      default:
-        return 'Abonné';
-    }
-  }
-
-  Color _getRoleColor(String role) {
-    switch (role) {
-      case 'creator':
-        return Colors.purple;
-      case 'admin':
-        return Colors.red;
-      case 'subscriber':
-      default:
-        return Colors.blue;
-    }
-  }
 }
