@@ -45,5 +45,9 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>OnlyFlick a besoin d'accéder à la caméra pour prendre des photos.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>OnlyFlick a besoin d'accéder à vos photos pour sélectionner des images.</string>
 </dict>
 </plist>

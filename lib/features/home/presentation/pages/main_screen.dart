@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 import 'feed_screen.dart';
 import 'search_page.dart';
-import 'profile_screen.dart'; // ← Assure-toi que ce fichier existe
+import 'profile_screen.dart'; 
+import '../../../auth/auth_provider.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -13,62 +16,184 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0;
 
-  final List<Widget> _screens = [
-    const FeedScreen(),
-    const SearchScreen(),
-    ProfileScreen(isCreator: true), // ← Affiche maintenant la vraie page profil
-  ];
-
   void _onItemTapped(int index) {
     setState(() => _selectedIndex = index);
   }
 
+  /// Navigation vers la page de création de post avec GoRouter
+  void _navigateToCreatePost() {
+    context.pushNamed('createPost').then((result) {
+      // Si un post a été créé avec succès, actualiser le feed
+      if (result == true && _selectedIndex == 0) {
+        _showSuccessMessage();
+        // TODO: Refresh du feed si nécessaire
+      }
+    });
+  }
+
+  /// Affiche un message de succès après création d'un post
+  void _showSuccessMessage() {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.white, size: 20),
+              SizedBox(width: 8),
+              Text('Post créé avec succès !'),
+            ],
+          ),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          margin: const EdgeInsets.all(16),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: IndexedStack(
-        index: _selectedIndex,
-        children: _screens,
-      ),
-      bottomNavigationBar: Container(
+    return Consumer<AuthProvider>(
+      builder: (context, authProvider, child) {
+        final user = authProvider.user;
+        final isCreator = user?.isCreator == true;
+        
+        // Construire les écrans dynamiquement selon le rôle
+        final screens = [
+          FeedScreen(isCreator: isCreator, onCreatePost: _navigateToCreatePost), // ← Passer la fonction
+          const SearchScreen(),
+          ProfileScreen(isCreator: isCreator),
+        ];
+        
+        return Scaffold(
+          backgroundColor: Colors.white,
+          body: IndexedStack(
+            index: _selectedIndex,
+            children: screens,
+          ),
+          bottomNavigationBar: _buildCompactBottomNavigationBar(),
+          
+          // Plus de FAB - le bouton + sera dans le header du feed
+        );
+      },
+    );
+  }
+
+  /// Barre de navigation inférieure compacte sans overflow
+  Widget _buildCompactBottomNavigationBar() {
+    return Container(
+      decoration: BoxDecoration(
         color: Colors.white,
-        padding: const EdgeInsets.only(top: 8, bottom: 18),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            _navIcon(Icons.home_rounded, 0),
-            _navIcon(Icons.search_rounded, 1),
-            _profileIcon(2),
-          ],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            offset: const Offset(0, -2),
+            blurRadius: 12,
+          ),
+        ],
+      ),
+      child: SafeArea(
+        child: Container(
+          height: 50, // ← Hauteur très compacte
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildCompactNavIcon(Icons.home_rounded, 'Accueil', 0),
+              _buildCompactNavIcon(Icons.search_rounded, 'Recherche', 1),
+              _buildCompactProfileIcon(2),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _navIcon(IconData icon, int index) {
+  /// Item de navigation compact sans overflow
+  Widget _buildCompactNavIcon(IconData icon, String label, int index) {
     final isSelected = _selectedIndex == index;
-    return IconButton(
-      onPressed: () => _onItemTapped(index),
-      icon: Icon(
-        icon,
-        color: isSelected ? Colors.black : Colors.grey[400],
-        size: 28,
+    
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => _onItemTapped(index),
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          height: 50,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                color: isSelected ? Colors.black : Colors.grey[500],
+                size: 22,
+              ),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 9,
+                  color: isSelected ? Colors.black : Colors.grey[500],
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 
-  Widget _profileIcon(int index) {
+  /// Item de navigation compact pour le profil
+  Widget _buildCompactProfileIcon(int index) {
     final isSelected = _selectedIndex == index;
-    return GestureDetector(
-      onTap: () => _onItemTapped(index),
-      child: CircleAvatar(
-        radius: 16,
-        backgroundColor: isSelected ? Colors.black : Colors.transparent,
-        child: const CircleAvatar(
-          radius: 14,
-          backgroundImage: NetworkImage('https://i.pravatar.cc/150?img=10'),
-        ),
+    
+    return Expanded(
+      child: Consumer<AuthProvider>(
+        builder: (context, authProvider, child) {
+          final user = authProvider.user;
+          
+          return GestureDetector(
+            onTap: () => _onItemTapped(index),
+            behavior: HitTestBehavior.opaque,
+            child: Container(
+              height: 50,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: isSelected 
+                          ? Border.all(color: Colors.black, width: 1.5)
+                          : null,
+                    ),
+                    child: CircleAvatar(
+                      radius: 10,
+                      backgroundColor: Colors.grey[300],
+                      backgroundImage: user != null 
+                          ? NetworkImage('https://i.pravatar.cc/150?img=${user.id % 20}')
+                          : null,
+                      child: user == null 
+                          ? Icon(Icons.person, color: Colors.grey[600], size: 12)
+                          : null,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Profil',
+                    style: TextStyle(
+                      fontSize: 9,
+                      color: isSelected ? Colors.black : Colors.grey[500],
+                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }
