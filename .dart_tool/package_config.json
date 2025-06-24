@@ -280,6 +280,7 @@
     {
       "name": "http_parser",
       "rootUri": "file:///Users/mamadousoumare/.pub-cache/hosted/pub.dev/http_parser-4.0.2",
+<<<<<<< Updated upstream
       "packageUri": "lib/",
       "languageVersion": "2.12"
     },
@@ -298,8 +299,10 @@
     {
       "name": "image_picker_for_web",
       "rootUri": "file:///Users/mamadousoumare/.pub-cache/hosted/pub.dev/image_picker_for_web-3.0.6",
+=======
+>>>>>>> Stashed changes
       "packageUri": "lib/",
-      "languageVersion": "3.4"
+      "languageVersion": "2.12"
     },
     {
       "name": "image_picker_ios",
