@@ -1,3 +1,4 @@
+// lib/features/home/presentation/pages/profile_screen.dart
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -29,9 +30,14 @@ class _ProfileScreenState extends State<ProfileScreen>
     final userIsCreator = user?.isCreator ?? false;
     _tabController = TabController(length: userIsCreator ? 2 : 1, vsync: this);
     
-    // Charger les données du profil
+    // 🔥 SOLUTION : Utiliser la nouvelle méthode ensureInitialized
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<ProfileProvider>().loadProfileData();
+      final profileProvider = context.read<ProfileProvider>();
+      
+      // S'assurer que les données sont initialisées
+      profileProvider.ensureInitialized();
+      
+      debugPrint('🔄 [ProfileScreen] Initialization requested');
     });
   }
 
@@ -222,16 +228,21 @@ class _ProfileScreenState extends State<ProfileScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // 🔥 CORRECTION : Utiliser le displayName comme nom d'affichage public
           Text(
-            user?.fullName ?? 'Utilisateur',
+            user?.displayName ?? 'Utilisateur',  // 🔥 displayName = username ou fullName
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
           ),
           const SizedBox(height: 4),
-          Text(
-            user?.email ?? 'email@example.com',
-            style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-          ),
-          const SizedBox(height: 8),
+          
+          // 🔥 CORRECTION : Afficher @username style social media
+          if (user?.hasUsername == true) ...[
+            Text(
+              user!.usernameWithAt,  // 🔥 NOUVEAU : usernameWithAt retourne @username
+              style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+            ),
+            const SizedBox(height: 8),
+          ],
           
           // Bio avec possibilité de modification
           GestureDetector(
@@ -346,14 +357,68 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
+  // 🔥 GRILLE AMÉLIORÉE : Meilleure gestion des états avec le flag isInitialized
   Widget _buildGrid({required String type, required ProfileProvider profileProvider}) {
+    // 🔥 État de chargement
     if (profileProvider.isLoadingPosts) {
       return const Center(
-        child: CircularProgressIndicator(),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Chargement des posts...'),
+          ],
+        ),
       );
     }
 
-    if (profileProvider.userPosts.isEmpty) {
+    // 🔥 Gestion d'erreur avec bouton de retry
+    if (profileProvider.error != null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.error, size: 64, color: Colors.red[400]),
+            const SizedBox(height: 16),
+            Text('Erreur: ${profileProvider.error}'),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () {
+                debugPrint('🔄 [ProfileScreen] Retry button pressed');
+                profileProvider.loadUserPosts(refresh: true);
+              },
+              child: const Text('Réessayer'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Filtrer les posts selon le type d'onglet
+    List<dynamic> filteredPosts = profileProvider.userPosts;
+    if (type == 'shop') {
+      filteredPosts = profileProvider.userPosts
+          .where((post) => post.visibility == 'subscriber')
+          .toList();
+    }
+
+    // 🔥 État vide avec vérification d'initialisation
+    if (filteredPosts.isEmpty) {
+      // 🔥 NOUVEAU : Vérifier si on est encore en train d'initialiser
+      if (!profileProvider.isInitialized) {
+        return const Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('Initialisation...'),
+            ],
+          ),
+        );
+      }
+      
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -384,11 +449,20 @@ class _ProfileScreenState extends State<ProfileScreen>
                 color: Colors.grey[500],
               ),
             ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () {
+                debugPrint('🔄 [ProfileScreen] Refresh button pressed');
+                profileProvider.loadUserPosts(refresh: true);
+              },
+              child: const Text('🔄 Actualiser'),
+            ),
           ],
         ),
       );
     }
 
+    // Grille des posts
     return GridView.builder(
       padding: const EdgeInsets.all(16),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -396,44 +470,171 @@ class _ProfileScreenState extends State<ProfileScreen>
         crossAxisSpacing: 8,
         mainAxisSpacing: 8,
       ),
-      itemCount: profileProvider.userPosts.length,
+      itemCount: filteredPosts.length,
       itemBuilder: (context, index) {
-        final post = profileProvider.userPosts[index];
+        final post = filteredPosts[index];
+        
         return GestureDetector(
           onTap: () => _onPostTap(post),
-          child: Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(8),
-              color: Colors.grey[300],
-            ),
-                            child: post.imageUrl.isNotEmpty
-                ? ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: Image.network(
-                      post.imageUrl,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        return Container(
-                          color: Colors.grey[300],
-                          child: const Icon(Icons.error),
-                        );
-                      },
-                    ),
-                  )
-                : Container(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(8),
-                      color: Colors.grey[300],
-                    ),
-                    child: const Icon(
-                      Icons.image,
-                      color: Colors.grey,
-                      size: 32,
-                    ),
-                  ),
-          ),
+          child: _buildPostThumbnail(post),
         );
       },
+    );
+  }
+
+  Widget _buildPostThumbnail(dynamic post) {
+    return Stack(
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            color: Colors.grey[300],
+          ),
+          child: post.imageUrl.isNotEmpty
+              ? ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(
+                    post.imageUrl,
+                    fit: BoxFit.cover,
+                    width: double.infinity,
+                    height: double.infinity,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Container(
+                        color: Colors.grey[300],
+                        child: const Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.error, color: Colors.red, size: 24),
+                            SizedBox(height: 4),
+                            Text('Erreur', style: TextStyle(fontSize: 8)),
+                          ],
+                        ),
+                      );
+                    },
+                    loadingBuilder: (context, child, loadingProgress) {
+                      if (loadingProgress == null) return child;
+                      return Container(
+                        color: Colors.grey[300],
+                        child: Center(
+                          child: CircularProgressIndicator(
+                            value: loadingProgress.expectedTotalBytes != null
+                                ? loadingProgress.cumulativeBytesLoaded / 
+                                  loadingProgress.expectedTotalBytes!
+                                : null,
+                            strokeWidth: 2,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                )
+              : Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    color: Colors.grey[300],
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.image, color: Colors.grey, size: 32),
+                      const SizedBox(height: 4),
+                      Padding(
+                        padding: const EdgeInsets.all(4.0),
+                        child: Text(
+                          post.content.length > 20 
+                              ? '${post.content.substring(0, 20)}...'
+                              : post.content,
+                          style: const TextStyle(fontSize: 10),
+                          textAlign: TextAlign.center,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+        ),
+        
+        // Indicateur de visibilité
+        Positioned(
+          top: 4,
+          right: 4,
+          child: _buildVisibilityIndicator(post.visibility),
+        ),
+        
+        // Overlay avec stats du post
+        Positioned(
+          bottom: 0,
+          left: 0,
+          right: 0,
+          child: Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              borderRadius: const BorderRadius.only(
+                bottomLeft: Radius.circular(8),
+                bottomRight: Radius.circular(8),
+              ),
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.transparent,
+                  Colors.black.withOpacity(0.7),
+                ],
+              ),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.favorite, color: Colors.white, size: 12),
+                const SizedBox(width: 2),
+                Text(
+                  '${post.likesCount}',
+                  style: const TextStyle(color: Colors.white, fontSize: 10),
+                ),
+                const Spacer(),
+                const Icon(Icons.comment, color: Colors.white, size: 12),
+                const SizedBox(width: 2),
+                Text(
+                  '${post.commentsCount}',
+                  style: const TextStyle(color: Colors.white, fontSize: 10),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildVisibilityIndicator(String visibility) {
+    IconData icon;
+    Color color;
+    
+    switch (visibility.toLowerCase()) {
+      case 'public':
+        icon = Icons.public;
+        color = Colors.green;
+        break;
+      case 'subscriber':
+        icon = Icons.lock;
+        color = Colors.orange;
+        break;
+      default:
+        icon = Icons.visibility;
+        color = Colors.grey;
+    }
+    
+    return Container(
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.7),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Icon(
+        icon,
+        color: color,
+        size: 12,
+      ),
     );
   }
 
@@ -467,7 +668,13 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
 
     if (source != null) {
-      final XFile? image = await _imagePicker.pickImage(source: source);
+      final XFile? image = await _imagePicker.pickImage(
+        source: source,
+        maxWidth: 512,
+        maxHeight: 512,
+        imageQuality: 80,
+      );
+      
       if (image != null && mounted) {
         final File imageFile = File(image.path);
         final success = await profileProvider.uploadAvatar(imageFile);
@@ -601,7 +808,6 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   Future<void> _handleCreatorUpgrade(ProfileProvider profileProvider) async {
-    // TODO: Implémenter la demande de passage créateur
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -613,8 +819,13 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   void _onPostTap(dynamic post) {
-    debugPrint('Post tapped: ${post.id}');
     // TODO: Navigation vers le détail du post
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Post: ${post.content}'),
+        duration: const Duration(seconds: 1),
+      ),
+    );
   }
 
   Future<void> _logout() async {

@@ -1,10 +1,9 @@
-// lib/features/profile/profile_provider.dart
+// lib/core/providers/profile_provider.dart
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../features/auth/auth_provider.dart';
 import '../models/profile_models.dart'; 
-import '../../features/auth/models/auth_models.dart';
 import '../services/profile_service.dart';
 
 /// Provider pour la gestion de l'état de la page profil
@@ -29,13 +28,16 @@ class ProfileProvider with ChangeNotifier {
   // Erreurs
   String? _error;
 
+  // 🔥 CORRECTION : Flag pour éviter les doubles chargements
+  bool _isInitialized = false;
+
   ProfileProvider(this._authProvider) {
     // Écouter les changements d'authentification
     _authProvider.addListener(_onAuthChanged);
     
-    // Charger les données si l'utilisateur est connecté
+    // 🔥 SOLUTION : Chargement différé plus robuste
     if (_authProvider.isAuthenticated) {
-      _loadInitialData();
+      _scheduleInitialLoad();
     }
   }
 
@@ -52,14 +54,23 @@ class ProfileProvider with ChangeNotifier {
   String get currentPostsType => _currentPostsType;
   bool get hasMorePosts => _hasMorePosts;
   String? get error => _error;
+  bool get isInitialized => _isInitialized;
 
   // ===== MÉTHODES PUBLIQUES =====
+
+  /// 🔥 NOUVELLE MÉTHODE : Force l'initialisation si nécessaire
+  void ensureInitialized() {
+    if (!_isInitialized && _authProvider.isAuthenticated) {
+      debugPrint('🔄 [ProfileProvider] Force initialization requested');
+      _scheduleInitialLoad();
+    }
+  }
 
   /// Charge toutes les données du profil
   Future<void> loadProfileData() async {
     if (!_authProvider.isAuthenticated) return;
     
-    debugPrint('🔄 Loading complete profile data');
+    debugPrint('🔄 [ProfileProvider] Loading complete profile data');
     await _loadInitialData();
   }
 
@@ -67,17 +78,69 @@ class ProfileProvider with ChangeNotifier {
   Future<void> refreshAllData() async {
     if (!_authProvider.isAuthenticated) return;
     
-    debugPrint('🔄 Refreshing all profile data');
+    debugPrint('🔄 [ProfileProvider] Refreshing all profile data');
     _clearError();
     
-    await Future.wait([
-      loadStats(),
-      loadUserPosts(refresh: true),
-    ]);
+    // Chargement séquentiel 
+    await _loadStats();
+    await _loadUserPosts(refresh: true);
+    
+    // Notification finale garantie
+    _safeNotifyListeners();
   }
 
   /// Charge les statistiques du profil
   Future<void> loadStats() async {
+    await _loadStats();
+  }
+
+  /// Charge les posts de l'utilisateur
+  Future<void> loadUserPosts({bool refresh = false, String? type}) async {
+    await _loadUserPosts(refresh: refresh, type: type);
+  }
+
+  /// Efface l'erreur courante
+  void clearError() {
+    _clearError();
+  }
+
+  // ===== MÉTHODES PRIVÉES =====
+
+  /// 🔥 SOLUTION PRINCIPALE : Planification du chargement initial
+  void _scheduleInitialLoad() {
+    // Triple délai pour s'assurer que tout est monté
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future.delayed(const Duration(milliseconds: 50), () {
+        if (_authProvider.isAuthenticated && !_isInitialized) {
+          debugPrint('🚀 [ProfileProvider] Starting scheduled initial load');
+          _loadInitialData();
+        }
+      });
+    });
+  }
+
+  /// Chargement initial de toutes les données - VERSION SIMPLIFIÉE
+  Future<void> _loadInitialData() async {
+    if (!_authProvider.isAuthenticated || _isInitialized) return;
+
+    debugPrint('🔄 [ProfileProvider] Loading initial profile data');
+    _isInitialized = true; // 🔥 Marquer comme initialisé
+    
+    try {
+      // Chargement séquentiel simple
+      await _loadStats();
+      await _loadUserPosts(refresh: true);
+      
+      debugPrint('✅ [ProfileProvider] Initial profile data loaded successfully');
+      
+    } catch (e) {
+      debugPrint('❌ [ProfileProvider] Error in _loadInitialData: $e');
+      _setError('Erreur lors du chargement initial');
+    }
+  }
+
+  /// Charge les statistiques du profil
+  Future<void> _loadStats() async {
     if (!_authProvider.isAuthenticated) return;
     
     _setLoadingStats(true);
@@ -88,21 +151,23 @@ class ProfileProvider with ChangeNotifier {
       
       if (result.isSuccess && result.data != null) {
         _stats = result.data;
-        debugPrint('📊 Stats loaded: ${_stats.toString()}');
+        debugPrint('📊 [ProfileProvider] Stats loaded: ${_stats.toString()}');
       } else {
         _setError(result.error?.message ?? 'Erreur de chargement des statistiques');
       }
     } catch (e) {
       _setError('Erreur inattendue lors du chargement des statistiques');
-      debugPrint('❌ Stats loading error: $e');
+      debugPrint('❌ [ProfileProvider] Stats loading error: $e');
     } finally {
       _setLoadingStats(false);
     }
   }
 
-  /// Charge les posts de l'utilisateur
-  Future<void> loadUserPosts({bool refresh = false, String? type}) async {
+  /// 🔥 MÉTHODE SIMPLIFIÉE : Charge les posts de l'utilisateur
+  Future<void> _loadUserPosts({bool refresh = false, String? type}) async {
     if (!_authProvider.isAuthenticated) return;
+    
+    debugPrint('📝 [ProfileProvider] Starting loadUserPosts (refresh: $refresh, type: $type)');
     
     // Si on refresh ou change de type, réinitialiser
     if (refresh || (type != null && type != _currentPostsType)) {
@@ -113,12 +178,17 @@ class ProfileProvider with ChangeNotifier {
     }
     
     // Si plus de posts disponibles, arrêter
-    if (!_hasMorePosts) return;
+    if (!_hasMorePosts) {
+      debugPrint('📝 [ProfileProvider] No more posts available');
+      return;
+    }
     
     _setLoadingPosts(true);
     if (refresh) _clearError();
     
     try {
+      debugPrint('📝 [ProfileProvider] Calling API for posts (page: $_currentPage, type: $_currentPostsType)');
+      
       final result = await _profileService.getUserPosts(
         page: _currentPage,
         limit: 20,
@@ -127,46 +197,127 @@ class ProfileProvider with ChangeNotifier {
       
       if (result.isSuccess && result.data != null) {
         final newPosts = result.data!;
+        debugPrint('📝 [ProfileProvider] API returned ${newPosts.length} posts');
         
         if (refresh || _currentPage == 1) {
           _userPosts = newPosts;
+          debugPrint('📝 [ProfileProvider] Posts replaced (total: ${_userPosts.length})');
         } else {
           _userPosts.addAll(newPosts);
+          debugPrint('📝 [ProfileProvider] Posts added (total: ${_userPosts.length})');
         }
         
         // Vérifier s'il y a plus de posts
         _hasMorePosts = newPosts.length >= 20;
         _currentPage++;
         
-        debugPrint('📝 Posts loaded: ${newPosts.length} (total: ${_userPosts.length})');
+        debugPrint('📝 [ProfileProvider] Posts loaded successfully: ${newPosts.length} (total: ${_userPosts.length})');
+        
       } else {
+        debugPrint('❌ [ProfileProvider] Failed to load posts: ${result.error?.message}');
         _setError(result.error?.message ?? 'Erreur de chargement des posts');
       }
     } catch (e) {
       _setError('Erreur inattendue lors du chargement des posts');
-      debugPrint('❌ Posts loading error: $e');
+      debugPrint('❌ [ProfileProvider] Posts loading error: $e');
     } finally {
       _setLoadingPosts(false);
+      // 🔥 NOTIFICATION GARANTIE à la fin du chargement
+      _safeNotifyListeners();
     }
   }
 
-  /// Charge plus de posts (pagination)
-  Future<void> loadMorePosts() async {
-    if (!_hasMorePosts || _isLoadingPosts) return;
-    
-    debugPrint('📝 Loading more posts (page $_currentPage)');
-    await loadUserPosts();
+  /// Listener pour les changements d'authentification
+  void _onAuthChanged() {
+    if (_authProvider.isAuthenticated && !_isInitialized) {
+      debugPrint('👤 [ProfileProvider] User authenticated - scheduling profile data load');
+      _scheduleInitialLoad();
+    } else if (!_authProvider.isAuthenticated) {
+      debugPrint('👤 [ProfileProvider] User logged out - clearing profile data');
+      _clearAllData();
+    }
   }
 
-  /// Change le type de posts affichés
-  Future<void> changePostsType(String type) async {
-    if (type == _currentPostsType) return;
-    
-    debugPrint('🔄 Changing posts type to: $type');
-    await loadUserPosts(refresh: true, type: type);
+  /// Efface toutes les données
+  void _clearAllData() {
+    _stats = null;
+    _userPosts.clear();
+    _currentPage = 1;
+    _hasMorePosts = true;
+    _currentPostsType = 'all';
+    _isInitialized = false; // 🔥 Reset du flag
+    _clearError();
+    _safeNotifyListeners();
   }
 
-  /// Upload d'avatar
+  /// 🔥 NOTIFICATION SÉCURISÉE : S'assure que la notification est bien envoyée
+  void _safeNotifyListeners() {
+    // Notification immédiate
+    notifyListeners();
+    
+    // Notification différée pour s'assurer que l'UI reçoit le changement
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      notifyListeners();
+      debugPrint('🔔 [ProfileProvider] UI notification sent');
+    });
+  }
+
+  /// Gestion des états de chargement
+  void _setLoadingStats(bool loading) {
+    if (_isLoadingStats != loading) {
+      _isLoadingStats = loading;
+      _safeNotifyListeners();
+    }
+  }
+
+  void _setLoadingPosts(bool loading) {
+    if (_isLoadingPosts != loading) {
+      _isLoadingPosts = loading;
+      _safeNotifyListeners();
+    }
+  }
+
+  void _setUploadingAvatar(bool uploading) {
+    if (_isUploadingAvatar != uploading) {
+      _isUploadingAvatar = uploading;
+      _safeNotifyListeners();
+    }
+  }
+
+  void _setUpdatingBio(bool updating) {
+    if (_isUpdatingBio != updating) {
+      _isUpdatingBio = updating;
+      _safeNotifyListeners();
+    }
+  }
+
+  void _setCheckingUsername(bool checking) {
+    if (_isCheckingUsername != checking) {
+      _isCheckingUsername = checking;
+      _safeNotifyListeners();
+    }
+  }
+
+  void _setError(String? error) {
+    if (_error != error) {
+      _error = error;
+      _safeNotifyListeners();
+    }
+  }
+
+  void _clearError() {
+    _setError(null);
+  }
+
+  @override
+  void dispose() {
+    _authProvider.removeListener(_onAuthChanged);
+    super.dispose();
+  }
+
+  // ===== MÉTHODES POUR LES AUTRES FONCTIONNALITÉS =====
+
+  /// Upload d'avatar utilisateur
   Future<bool> uploadAvatar(File imageFile) async {
     if (!_authProvider.isAuthenticated) return false;
     
@@ -174,50 +325,58 @@ class ProfileProvider with ChangeNotifier {
     _clearError();
     
     try {
+      debugPrint('📸 [ProfileProvider] Uploading avatar');
+      
       final result = await _profileService.uploadAvatar(imageFile);
       
       if (result.isSuccess && result.data != null) {
-        // Mettre à jour l'avatar dans l'AuthProvider
+        debugPrint('📸 [ProfileProvider] Avatar uploaded successfully: ${result.data!.avatarUrl}');
+        
+        // Recharger le profil utilisateur pour obtenir la nouvelle URL
         await _authProvider.refreshProfile();
         
-        debugPrint('📤 Avatar uploaded successfully: ${result.data!.avatarUrl}');
         return true;
       } else {
+        debugPrint('❌ [ProfileProvider] Failed to upload avatar: ${result.error?.message}');
         _setError(result.error?.message ?? 'Erreur lors de l\'upload de l\'avatar');
         return false;
       }
     } catch (e) {
       _setError('Erreur inattendue lors de l\'upload');
-      debugPrint('❌ Avatar upload error: $e');
+      debugPrint('❌ [ProfileProvider] Avatar upload error: $e');
       return false;
     } finally {
       _setUploadingAvatar(false);
     }
   }
 
-  /// Mise à jour de la bio
-  Future<bool> updateBio(String bio) async {
+  /// Mise à jour de la bio utilisateur
+  Future<bool> updateBio(String newBio) async {
     if (!_authProvider.isAuthenticated) return false;
     
     _setUpdatingBio(true);
     _clearError();
     
     try {
-      final result = await _profileService.updateBio(bio);
+      debugPrint('📝 [ProfileProvider] Updating bio: $newBio');
+      
+      final result = await _profileService.updateBio(newBio);
       
       if (result.isSuccess) {
-        // Mettre à jour la bio dans l'AuthProvider
+        debugPrint('📝 [ProfileProvider] Bio updated successfully');
+        
+        // Recharger le profil utilisateur pour obtenir la nouvelle bio
         await _authProvider.refreshProfile();
         
-        debugPrint('📝 Bio updated successfully');
         return true;
       } else {
+        debugPrint('❌ [ProfileProvider] Failed to update bio: ${result.error?.message}');
         _setError(result.error?.message ?? 'Erreur lors de la mise à jour de la bio');
         return false;
       }
     } catch (e) {
       _setError('Erreur inattendue lors de la mise à jour');
-      debugPrint('❌ Bio update error: $e');
+      debugPrint('❌ [ProfileProvider] Bio update error: $e');
       return false;
     } finally {
       _setUpdatingBio(false);
@@ -234,128 +393,35 @@ class ProfileProvider with ChangeNotifier {
       final result = await _profileService.checkUsernameAvailability(username);
       
       if (result.isSuccess && result.data != null) {
-        debugPrint('🔍 Username check: ${result.data!.username} available: ${result.data!.available}');
+        debugPrint('🔍 [ProfileProvider] Username check: ${result.data!.username} available: ${result.data!.available}');
         return result.data!.available;
       } else {
-        debugPrint('❌ Username check failed: ${result.error?.message}');
+        debugPrint('❌ [ProfileProvider] Username check failed: ${result.error?.message}');
         return null;
       }
     } catch (e) {
-      debugPrint('❌ Username check error: $e');
+      debugPrint('❌ [ProfileProvider] Username check error: $e');
       return null;
     } finally {
       _setCheckingUsername(false);
     }
   }
 
-  /// Toggle like sur un post (pour les grilles de posts)
-  Future<void> togglePostLike(int postId) async {
-    if (!_authProvider.isAuthenticated) return;
-    
-    // Trouver le post dans la liste
-    final postIndex = _userPosts.indexWhere((post) => post.id == postId);
-    if (postIndex == -1) return;
-    
-    final post = _userPosts[postIndex];
-    
-    // Mise à jour optimiste de l'UI
-    final updatedPost = post.copyWith(
-      likesCount: post.isLiked ? post.likesCount - 1 : post.likesCount + 1,
-      isLiked: !post.isLiked,
-    );
-    
-    _userPosts[postIndex] = updatedPost;
-    notifyListeners();
-    
-    // TODO: Appeler l'API pour liker/unliker le post
-    // Cette fonctionnalité sera implémentée avec le PostsService
-    debugPrint('👍 Post $postId like toggled (optimistic update)');
-  }
-
-  /// Efface l'erreur courante
-  void clearError() {
-    _clearError();
-  }
-
-  // ===== MÉTHODES PRIVÉES =====
-
-  /// Chargement initial de toutes les données
-  Future<void> _loadInitialData() async {
-    if (!_authProvider.isAuthenticated) return;
-
-    debugPrint('🔄 Loading initial profile data');
-    
-    // Charger les statistiques et les posts en parallèle
-    await Future.wait([
-      loadStats(),
-      loadUserPosts(refresh: true),
-    ]);
-  }
-
-  /// Listener pour les changements d'authentification
-  void _onAuthChanged() {
-    if (_authProvider.isAuthenticated) {
-      debugPrint('👤 User authenticated - loading profile data');
-      _loadInitialData();
-    } else {
-      debugPrint('👤 User logged out - clearing profile data');
-      _clearAllData();
+  /// Plus de posts (pagination)
+  Future<void> loadMorePosts() async {
+    if (!_authProvider.isAuthenticated || !_hasMorePosts || _isLoadingPosts) {
+      return;
     }
+    
+    debugPrint('📝 [ProfileProvider] Loading more posts (page: $_currentPage)');
+    await _loadUserPosts();
   }
 
-  /// Efface toutes les données
-  void _clearAllData() {
-    _stats = null;
-    _userPosts.clear();
-    _currentPage = 1;
-    _hasMorePosts = true;
-    _currentPostsType = 'all';
-    _clearError();
-    notifyListeners();
-  }
-
-  /// Gestion des états de chargement
-  void _setLoadingStats(bool loading) {
-    _isLoadingStats = loading;
-    notifyListeners();
-  }
-
-  void _setLoadingPosts(bool loading) {
-    _isLoadingPosts = loading;
-    notifyListeners();
-  }
-
-  void _setUploadingAvatar(bool uploading) {
-    _isUploadingAvatar = uploading;
-    notifyListeners();
-  }
-
-  void _setUpdatingBio(bool updating) {
-    _isUpdatingBio = updating;
-    notifyListeners();
-  }
-
-  void _setCheckingUsername(bool checking) {
-    _isCheckingUsername = checking;
-    notifyListeners();
-  }
-
-  /// Gestion des erreurs
-  void _setError(String error) {
-    _error = error;
-    notifyListeners();
-  }
-
-  void _clearError() {
-    if (_error != null) {
-      _error = null;
-      notifyListeners();
+  /// Changer le type de posts affiché
+  Future<void> changePostsType(String type) async {
+    if (type != _currentPostsType) {
+      debugPrint('📝 [ProfileProvider] Changing posts type to: $type');
+      await _loadUserPosts(refresh: true, type: type);
     }
-  }
-
-  @override
-  void dispose() {
-    _authProvider.removeListener(_onAuthChanged);
-    super.dispose();
   }
 }

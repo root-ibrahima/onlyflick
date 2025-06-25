@@ -1,10 +1,8 @@
-// lib/features/profile/profile_service.dart
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import '../../core/services/api_service.dart';
 import '../../features/auth/models/auth_models.dart';
 import '../models/profile_models.dart'; 
-
 
 /// Service pour les opérations de profil utilisateur
 class ProfileService {
@@ -38,7 +36,7 @@ class ProfileService {
     }
   }
 
-  /// Récupération des posts de l'utilisateur
+  /// Récupération des posts de l'utilisateur - VERSION CORRIGÉE
   Future<UserPostsResult> getUserPosts({
     int page = 1,
     int limit = 20,
@@ -47,16 +45,44 @@ class ProfileService {
     try {
       debugPrint('📝 Fetching user posts (page: $page, type: $type)');
       
-      final response = await _apiService.get<List<UserPost>>(
+      // ✅ CORRECTION: Utiliser dynamic pour éviter le problème de parsing
+      final response = await _apiService.get<dynamic>(
         '/profile/posts?page=$page&limit=$limit&type=$type',
-        fromJson: (json) => (json as List)
-            .map((item) => UserPost.fromJson(item))
-            .toList(),
+        fromJson: (json) => json, // Pas de parsing direct
       );
 
       if (response.isSuccess && response.data != null) {
-        debugPrint('📝 User posts fetched successfully (${response.data!.length} posts)');
-        return UserPostsResult.success(response.data!);
+        debugPrint('📝 Raw response received, parsing posts...');
+        
+        // ✅ CORRECTION: Parsing manuel avec gestion d'erreur
+        List<UserPost> posts = [];
+        
+        try {
+          if (response.data is List) {
+            final jsonList = response.data as List;
+            
+            for (var item in jsonList) {
+              if (item is Map<String, dynamic>) {
+                final post = UserPost.fromJson(item);
+                posts.add(post);
+                debugPrint('📝 ✅ Post parsed: ${post.id} - ${post.content}');
+              }
+            }
+          } else {
+            debugPrint('❌ Response data is not a List: ${response.data.runtimeType}');
+            return UserPostsResult.failure(
+              AuthError.validation('Format de réponse invalide')
+            );
+          }
+        } catch (parseError) {
+          debugPrint('❌ Error parsing posts: $parseError');
+          return UserPostsResult.failure(
+            AuthError.validation('Erreur de traitement des posts: $parseError')
+          );
+        }
+        
+        debugPrint('📝 User posts fetched successfully (${posts.length} posts)');
+        return UserPostsResult.success(posts);
       } else {
         debugPrint('❌ Failed to fetch user posts: ${response.error}');
         return UserPostsResult.failure(
@@ -209,4 +235,144 @@ class ProfileService {
       return UsernameCheckResult.failure(AuthError.network());
     }
   }
+}
+
+// ===== RÉSULTATS D'OPÉRATIONS =====
+
+/// Résultat pour les statistiques profil
+class ProfileStatsResult {
+  final bool isSuccess;
+  final ProfileStats? data;
+  final AuthError? error;
+
+  const ProfileStatsResult._({
+    required this.isSuccess,
+    this.data,
+    this.error,
+  });
+
+  factory ProfileStatsResult.success(ProfileStats data) {
+    return ProfileStatsResult._(isSuccess: true, data: data);
+  }
+
+  factory ProfileStatsResult.failure(AuthError error) {
+    return ProfileStatsResult._(isSuccess: false, error: error);
+  }
+
+  bool get isFailure => !isSuccess;
+
+  @override
+  String toString() => isSuccess 
+      ? 'ProfileStatsResult.success($data)' 
+      : 'ProfileStatsResult.failure($error)';
+}
+
+/// Résultat pour les posts utilisateur
+class UserPostsResult {
+  final bool isSuccess;
+  final List<UserPost>? data;
+  final AuthError? error;
+
+  const UserPostsResult._({
+    required this.isSuccess,
+    this.data,
+    this.error,
+  });
+
+  factory UserPostsResult.success(List<UserPost> data) {
+    return UserPostsResult._(isSuccess: true, data: data);
+  }
+
+  factory UserPostsResult.failure(AuthError error) {
+    return UserPostsResult._(isSuccess: false, error: error);
+  }
+
+  bool get isFailure => !isSuccess;
+
+  @override
+  String toString() => isSuccess 
+      ? 'UserPostsResult.success(${data?.length} posts)' 
+      : 'UserPostsResult.failure($error)';
+}
+
+/// Résultat pour l'upload d'avatar
+class AvatarUploadResult {
+  final bool isSuccess;
+  final AvatarUploadResponse? data;
+  final AuthError? error;
+
+  const AvatarUploadResult._({
+    required this.isSuccess,
+    this.data,
+    this.error,
+  });
+
+  factory AvatarUploadResult.success(AvatarUploadResponse data) {
+    return AvatarUploadResult._(isSuccess: true, data: data);
+  }
+
+  factory AvatarUploadResult.failure(AuthError error) {
+    return AvatarUploadResult._(isSuccess: false, error: error);
+  }
+
+  bool get isFailure => !isSuccess;
+
+  @override
+  String toString() => isSuccess 
+      ? 'AvatarUploadResult.success(${data?.avatarUrl})' 
+      : 'AvatarUploadResult.failure($error)';
+}
+
+/// Résultat pour la mise à jour de bio
+class BioUpdateResult {
+  final bool isSuccess;
+  final AuthError? error;
+
+  const BioUpdateResult._({
+    required this.isSuccess,
+    this.error,
+  });
+
+  factory BioUpdateResult.success() {
+    return const BioUpdateResult._(isSuccess: true);
+  }
+
+  factory BioUpdateResult.failure(AuthError error) {
+    return BioUpdateResult._(isSuccess: false, error: error);
+  }
+
+  bool get isFailure => !isSuccess;
+
+  @override
+  String toString() => isSuccess 
+      ? 'BioUpdateResult.success()' 
+      : 'BioUpdateResult.failure($error)';
+}
+
+/// Résultat pour la vérification de username
+class UsernameCheckResult {
+  final bool isSuccess;
+  final UsernameCheckResponse? data;
+  final AuthError? error;
+
+  const UsernameCheckResult._({
+    required this.isSuccess,
+    this.data,
+    this.error,
+  });
+
+  factory UsernameCheckResult.success(UsernameCheckResponse data) {
+    return UsernameCheckResult._(isSuccess: true, data: data);
+  }
+
+  factory UsernameCheckResult.failure(AuthError error) {
+    return UsernameCheckResult._(isSuccess: false, error: error);
+  }
+
+  bool get isFailure => !isSuccess;
+
+  @override
+  String toString() => isSuccess 
+      ? 'UsernameCheckResult.success(${data?.username}: ${data?.available})' 
+      : 'UsernameCheckResult.failure($error)';
 }
