@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import '../../../core/services/api_service.dart';
 import 'models/auth_models.dart';
+
 /// Service pour les opérations d'authentification avec le backend Go
 class AuthService {
   final ApiService _apiService = ApiService();
@@ -39,10 +40,10 @@ class AuthService {
     }
   }
 
-  /// Inscription utilisateur
+  /// Inscription utilisateur AVEC USERNAME
   Future<AuthResult> register(RegisterRequest request) async {
     try {
-      debugPrint('🔐 Attempting registration for: ${request.email}');
+      debugPrint('🔐 Attempting registration for: ${request.email} with username: ${request.username}');
       
       final response = await _apiService.post<AuthResponse>(
         '/register',  // Endpoint de votre backend Go
@@ -56,7 +57,7 @@ class AuthService {
         // Sauvegarder le token automatiquement
         await _apiService.setToken(authData.token);
         
-        debugPrint('🔐 Registration successful for user ID: ${authData.userId}');
+        debugPrint('🔐 Registration successful for user ID: ${authData.userId}, username: ${authData.username}');
         return AuthResult.success(authData);
       } else {
         debugPrint('❌ Registration failed: ${response.error}');
@@ -73,6 +74,34 @@ class AuthService {
     }
   }
 
+  /// ===== VÉRIFICATION DISPONIBILITÉ USERNAME =====
+  Future<UsernameCheckResult> checkUsernameAvailability(String username) async {
+    try {
+      debugPrint('🔐 Checking username availability: $username');
+      
+      final response = await _apiService.get<UsernameCheckResponse>(
+        '/auth/check-username?username=${Uri.encodeComponent(username)}',  // Route corrigée
+        fromJson: (json) => UsernameCheckResponse.fromJson(json),
+      );
+
+      if (response.isSuccess && response.data != null) {
+        debugPrint('🔐 Username check successful: ${response.data!.available}');
+        return UsernameCheckResult.success(response.data!);
+      } else {
+        debugPrint('❌ Username check failed: ${response.error}');
+        return UsernameCheckResult.failure(
+          AuthError.fromApiResponse(
+            response.error ?? 'Erreur de vérification du username',
+            response.statusCode,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('❌ Username check error: $e');
+      return UsernameCheckResult.failure(AuthError.network());
+    }
+  }
+
   /// Récupération du profil utilisateur
   Future<UserResult> getProfile() async {
     try {
@@ -84,7 +113,7 @@ class AuthService {
       );
 
       if (response.isSuccess && response.data != null) {
-        debugPrint('🔐 Profile fetched successfully');
+        debugPrint('🔐 Profile fetched successfully: ${response.data!.username}');
         return UserResult.success(response.data!);
       } else {
         debugPrint('❌ Failed to fetch profile: ${response.error}');
@@ -107,7 +136,7 @@ class AuthService {
     }
   }
 
-  /// Mise à jour du profil utilisateur
+  /// Mise à jour du profil utilisateur (AVEC SUPPORT USERNAME)
   Future<UserResult> updateProfile(UpdateProfileRequest request) async {
     try {
       debugPrint('🔐 Updating user profile');
@@ -226,50 +255,4 @@ class AuthService {
   bool hasToken() {
     return _apiService.token != null;
   }
-}
-
-/// Classe pour les résultats d'authentification
-class AuthResult {
-  final bool isSuccess;
-  final AuthResponse? data;
-  final AuthError? error;
-
-  const AuthResult._({
-    required this.isSuccess,
-    this.data,
-    this.error,
-  });
-
-  factory AuthResult.success(AuthResponse? data) {
-    return AuthResult._(isSuccess: true, data: data);
-  }
-
-  factory AuthResult.failure(AuthError error) {
-    return AuthResult._(isSuccess: false, error: error);
-  }
-
-  bool get isFailure => !isSuccess;
-}
-
-/// Classe pour les résultats d'utilisateur
-class UserResult {
-  final bool isSuccess;
-  final User? data;
-  final AuthError? error;
-
-  const UserResult._({
-    required this.isSuccess,
-    this.data,
-    this.error,
-  });
-
-  factory UserResult.success(User data) {
-    return UserResult._(isSuccess: true, data: data);
-  }
-
-  factory UserResult.failure(AuthError error) {
-    return UserResult._(isSuccess: false, error: error);
-  }
-
-  bool get isFailure => !isSuccess;
 }

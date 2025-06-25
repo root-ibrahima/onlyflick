@@ -13,6 +13,10 @@ class AuthProvider extends ChangeNotifier {
   User? _user;
   AuthError? _error;
 
+  // ===== ÉTAT VÉRIFICATION USERNAME =====
+  bool _isCheckingUsername = false;
+  UsernameCheckResult? _lastUsernameCheck;
+
   // Getters
   AuthState get state => _state;
   User? get user => _user;
@@ -22,6 +26,10 @@ class AuthProvider extends ChangeNotifier {
   bool get isAuthenticated => _state == AuthState.authenticated && _user != null;
   bool get isUnauthenticated => _state == AuthState.unauthenticated;
   bool get hasError => _state == AuthState.error && _error != null;
+
+  // ===== GETTERS USERNAME =====
+  bool get isCheckingUsername => _isCheckingUsername;
+  UsernameCheckResult? get lastUsernameCheck => _lastUsernameCheck;
 
   // Getters de rôle
   bool get isCreator => _user?.isCreator ?? false;
@@ -44,7 +52,7 @@ class AuthProvider extends ChangeNotifier {
         if (result.isSuccess && result.data != null) {
           _user = result.data;
           _setState(AuthState.authenticated);
-          debugPrint('🔐 User authenticated: ${_user!.email}');
+          debugPrint('🔐 User authenticated: ${_user!.email} (@${_user!.username})');
         } else {
           _setState(AuthState.unauthenticated);
           debugPrint('🔐 Token invalid, user unauthenticated');
@@ -77,7 +85,7 @@ class AuthProvider extends ChangeNotifier {
         if (profileResult.isSuccess && profileResult.data != null) {
           _user = profileResult.data;
           _setState(AuthState.authenticated);
-          debugPrint('🔐 Login successful for: ${_user!.email}');
+          debugPrint('🔐 Login successful for: ${_user!.email} (@${_user!.username})');
           return true;
         } else {
           _setError(profileResult.error ?? AuthError.server());
@@ -94,9 +102,9 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  /// Inscription utilisateur
-  Future<bool> register(String firstName, String lastName, String email, String password) async {
-    debugPrint('🔐 Registration attempt for: $email');
+  /// Inscription utilisateur AVEC USERNAME
+  Future<bool> register(String firstName, String lastName, String username, String email, String password) async {
+    debugPrint('🔐 Registration attempt for: $email with username: $username');
     
     _setState(AuthState.loading);
     _clearError();
@@ -105,9 +113,17 @@ class AuthProvider extends ChangeNotifier {
       final request = RegisterRequest(
         firstName: firstName,
         lastName: lastName,
+        username: username,  // ===== AJOUT USERNAME =====
         email: email,
         password: password,
       );
+
+      // ===== VALIDATION CÔTÉ CLIENT =====
+      final validationErrors = request.validate();
+      if (validationErrors.isNotEmpty) {
+        _setError(AuthError.validation('form', validationErrors.first));
+        return false;
+      }
       
       final result = await _authService.register(request);
 
@@ -118,7 +134,7 @@ class AuthProvider extends ChangeNotifier {
         if (profileResult.isSuccess && profileResult.data != null) {
           _user = profileResult.data;
           _setState(AuthState.authenticated);
-          debugPrint('🔐 Registration successful for: ${_user!.email}');
+          debugPrint('🔐 Registration successful for: ${_user!.email} (@${_user!.username})');
           return true;
         } else {
           _setError(profileResult.error ?? AuthError.server());
@@ -135,12 +151,59 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  /// Mise à jour du profil utilisateur
+  /// ===== NOUVELLE MÉTHODE : Vérification disponibilité username =====
+  Future<bool> checkUsernameAvailability(String username) async {
+    debugPrint('🔐 Checking username availability: $username');
+    
+    // Ne pas vérifier si username vide
+    if (username.trim().isEmpty) {
+      _lastUsernameCheck = null;
+      notifyListeners();
+      return false;
+    }
+
+    _isCheckingUsername = true;
+    notifyListeners();
+
+    try {
+      final result = await _authService.checkUsernameAvailability(username);
+      
+      _lastUsernameCheck = result;
+      _isCheckingUsername = false;
+      notifyListeners();
+
+      if (result.isSuccess) {
+        debugPrint('🔐 Username $username availability: ${result.data?.available}');
+        return result.data?.available ?? false;
+      } else {
+        debugPrint('❌ Username check error: ${result.error}');
+        return false;
+      }
+    } catch (e) {
+      debugPrint('❌ Username check error: $e');
+      _lastUsernameCheck = UsernameCheckResult.failure(AuthError.network());
+      _isCheckingUsername = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Efface le dernier résultat de vérification username
+  void clearUsernameCheck() {
+    _lastUsernameCheck = null;
+    _isCheckingUsername = false;
+    notifyListeners();
+  }
+
+  /// Mise à jour du profil utilisateur AVEC SUPPORT USERNAME
   Future<bool> updateProfile({
     String? firstName,
     String? lastName,
     String? email,
     String? password,
+    String? username,  // ===== AJOUT USERNAME =====
+    String? avatarUrl,
+    String? bio,
   }) async {
     if (!isAuthenticated) return false;
     
@@ -155,6 +218,9 @@ class AuthProvider extends ChangeNotifier {
         lastName: lastName,
         email: email,
         password: password,
+        username: username,  // ===== SUPPORT USERNAME =====
+        avatarUrl: avatarUrl,
+        bio: bio,
       );
       
       final result = await _authService.updateProfile(request);
@@ -162,7 +228,7 @@ class AuthProvider extends ChangeNotifier {
       if (result.isSuccess && result.data != null) {
         _user = result.data;
         _setState(AuthState.authenticated);
-        debugPrint('🔐 Profile updated successfully');
+        debugPrint('🔐 Profile updated successfully for: ${_user!.email} (@${_user!.username})');
         return true;
       } else {
         _setError(result.error ?? AuthError.server());
@@ -173,6 +239,23 @@ class AuthProvider extends ChangeNotifier {
       _setError(AuthError.network());
       return false;
     }
+  }
+
+  /// ===== MÉTHODES SPÉCIALISÉES POUR MISE À JOUR RAPIDE =====
+  
+  /// Mise à jour username uniquement
+  Future<bool> updateUsername(String newUsername) async {
+    return await updateProfile(username: newUsername);
+  }
+
+  /// Mise à jour bio uniquement
+  Future<bool> updateBio(String newBio) async {
+    return await updateProfile(bio: newBio);
+  }
+
+  /// Mise à jour avatar uniquement
+  Future<bool> updateAvatar(String newAvatarUrl) async {
+    return await updateProfile(avatarUrl: newAvatarUrl);
   }
 
   /// Demande de passage en créateur
@@ -237,6 +320,8 @@ class AuthProvider extends ChangeNotifier {
     
     await _authService.logout();
     _user = null;
+    _lastUsernameCheck = null;  // ===== EFFACER CACHE USERNAME =====
+    _isCheckingUsername = false;
     _setState(AuthState.unauthenticated);
     _clearError();
     
@@ -258,7 +343,8 @@ class AuthProvider extends ChangeNotifier {
       if (result.isSuccess && result.data != null) {
         _user = result.data;
         _setState(AuthState.authenticated);
-      } else if (result.error?.isAuthError ?? false) {
+        debugPrint('🔐 Profile refreshed for: ${_user!.email} (@${_user!.username})');
+      } else if (result.error?.statusCode == 401) {
         // Si erreur d'auth, déconnecter
         await logout();
       }
@@ -284,6 +370,38 @@ class AuthProvider extends ChangeNotifier {
   /// Efface l'erreur
   void _clearError() {
     _error = null;
+  }
+
+  /// ===== MÉTHODES UTILITAIRES POUR UI =====
+  
+  /// Obtient le nom d'affichage de l'utilisateur connecté
+  String get displayName {
+    if (_user == null) return '';
+    return _user!.displayName;
+  }
+
+  /// Obtient le nom complet de l'utilisateur connecté
+  String get fullName {
+    if (_user == null) return '';
+    return _user!.fullName;
+  }
+
+  /// Obtient le username de l'utilisateur connecté
+  String get username {
+    if (_user == null) return '';
+    return _user!.username;
+  }
+
+  /// Vérifie si le username actuel est valide
+  bool isUsernameValid(String username) {
+    final request = RegisterRequest(
+      firstName: 'temp',
+      lastName: 'temp', 
+      username: username,
+      email: 'temp@temp.com',
+      password: 'temp123',
+    );
+    return request.validateUsername() == null;
   }
 
   /// Méthode pour vérifier si l'utilisateur est connecté (legacy)

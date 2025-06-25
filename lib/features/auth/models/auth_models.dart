@@ -1,4 +1,3 @@
-//auth_models.dart
 /// Modèle pour l'utilisateur (correspond au backend Go)
 class User {
   final int id;
@@ -66,29 +65,15 @@ class User {
   String get initials {
     final first = firstName.isNotEmpty ? firstName[0].toUpperCase() : '';
     final last = lastName.isNotEmpty ? lastName[0].toUpperCase() : '';
-    return '$first$last';
+    return first + last;
   }
 
-  /// Nom d'affichage (username si disponible, sinon nom complet)
+  /// Nom d'affichage public (username avec @)
   String get displayName {
-    if (username.isNotEmpty) return '@$username';
-    return fullName;
-  }
-
-  /// Vérifie si l'utilisateur a un avatar personnalisé
-  bool get hasCustomAvatar => avatarUrl.isNotEmpty;
-
-  /// Vérifie si l'utilisateur a une bio
-  bool get hasBio => bio.isNotEmpty;
-
-  /// Vérifie si l'utilisateur a un username
-  bool get hasUsername => username.isNotEmpty;
-
-  /// URL de l'avatar avec fallback
-  String get effectiveAvatarUrl {
-    if (avatarUrl.isNotEmpty) return avatarUrl;
-    // Fallback vers un avatar généré basé sur l'ID
-    return 'https://i.pravatar.cc/150?img=${id % 20}';
+    if (username.isNotEmpty) {
+      return '@$username';
+    }
+    return fullName; // Fallback si pas de username
   }
 
   /// Vérifie si l'utilisateur est un créateur
@@ -100,47 +85,11 @@ class User {
   /// Vérifie si l'utilisateur est un abonné
   bool get isSubscriber => role == 'subscriber';
 
-  /// Copie avec modification
-  User copyWith({
-    int? id,
-    String? firstName,
-    String? lastName,
-    String? email,
-    String? role,
-    DateTime? createdAt,
-    String? avatarUrl,
-    String? bio,
-    String? username,
-    DateTime? updatedAt,
-  }) {
-    return User(
-      id: id ?? this.id,
-      firstName: firstName ?? this.firstName,
-      lastName: lastName ?? this.lastName,
-      email: email ?? this.email,
-      role: role ?? this.role,
-      createdAt: createdAt ?? this.createdAt,
-      avatarUrl: avatarUrl ?? this.avatarUrl,
-      bio: bio ?? this.bio,
-      username: username ?? this.username,
-      updatedAt: updatedAt ?? this.updatedAt,
-    );
-  }
-
   @override
-  String toString() => 'User(id: $id, email: $email, role: $role, username: $username)';
-
-  @override
-  bool operator ==(Object other) {
-    if (identical(this, other)) return true;
-    return other is User && other.id == id;
-  }
-
-  @override
-  int get hashCode => id.hashCode;
+  String toString() => 'User(id: $id, username: $username, email: $email, role: $role)';
 }
 
-/// Modèle pour la requête de connexion
+/// Requête de connexion
 class LoginRequest {
   final String email;
   final String password;
@@ -154,18 +103,23 @@ class LoginRequest {
     'email': email,
     'password': password,
   };
+
+  @override
+  String toString() => 'LoginRequest(email: $email)';
 }
 
-/// Modèle pour la requête d'inscription
+/// Requête d'inscription AVEC USERNAME
 class RegisterRequest {
   final String firstName;
   final String lastName;
+  final String username;  // ===== AJOUT USERNAME OBLIGATOIRE =====
   final String email;
   final String password;
 
   const RegisterRequest({
     required this.firstName,
     required this.lastName,
+    required this.username,  // ===== USERNAME REQUIS =====
     required this.email,
     required this.password,
   });
@@ -173,56 +127,133 @@ class RegisterRequest {
   Map<String, dynamic> toJson() => {
     'first_name': firstName,
     'last_name': lastName,
+    'username': username,  // ===== INCLURE USERNAME DANS JSON =====
     'email': email,
     'password': password,
   };
+
+  /// Validation côté client
+  String? validateUsername() {
+    if (username.isEmpty) {
+      return 'Username est obligatoire';
+    }
+    if (username.length < 3 || username.length > 20) {
+      return 'Username doit contenir entre 3 et 20 caractères';
+    }
+    if (!RegExp(r'^[a-zA-Z][a-zA-Z0-9_-]*$').hasMatch(username)) {
+      return 'Username doit commencer par une lettre et ne contenir que des lettres, chiffres, _ ou -';
+    }
+    return null; // Valide
+  }
+
+  /// Validation complète de tous les champs
+  List<String> validate() {
+    final errors = <String>[];
+    
+    if (firstName.trim().isEmpty) {
+      errors.add('Prénom est obligatoire');
+    }
+    if (lastName.trim().isEmpty) {
+      errors.add('Nom est obligatoire');
+    }
+    if (email.trim().isEmpty) {
+      errors.add('Email est obligatoire');
+    } else if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(email)) {
+      errors.add('Format email invalide');
+    }
+    if (password.isEmpty) {
+      errors.add('Mot de passe est obligatoire');
+    } else if (password.length < 6) {
+      errors.add('Mot de passe doit contenir au moins 6 caractères');
+    }
+    
+    final usernameError = validateUsername();
+    if (usernameError != null) {
+      errors.add(usernameError);
+    }
+    
+    return errors;
+  }
+
+  /// Vérifie si tous les champs sont valides
+  bool get isValid => validate().isEmpty;
+
+  @override
+  String toString() => 'RegisterRequest(firstName: $firstName, lastName: $lastName, username: $username, email: $email)';
 }
 
-/// Modèle pour la réponse d'authentification (login/register)
+/// Réponse d'authentification du serveur
 class AuthResponse {
-  final String message;
-  final int userId;
   final String token;
+  final int userId;
+  final String? username;  // ===== AJOUT USERNAME OPTIONNEL =====
 
   const AuthResponse({
-    required this.message,
-    required this.userId,
     required this.token,
+    required this.userId,
+    this.username,
   });
 
   factory AuthResponse.fromJson(Map<String, dynamic> json) {
     return AuthResponse(
-      message: json['message'] ?? '',
-      userId: json['user_id'] ?? 0,
       token: json['token'] ?? '',
+      userId: json['user_id'] ?? 0,
+      username: json['username'],  // ===== PARSE USERNAME =====
     );
   }
 
   Map<String, dynamic> toJson() => {
-    'message': message,
-    'user_id': userId,
     'token': token,
+    'user_id': userId,
+    if (username != null) 'username': username,
   };
+
+  @override
+  String toString() => 'AuthResponse(userId: $userId, username: $username, hasToken: ${token.isNotEmpty})';
 }
 
-/// Modèle pour la requête de mise à jour du profil
+/// Réponse de vérification username
+class UsernameCheckResponse {
+  final String username;
+  final bool available;
+  final String message;
+
+  const UsernameCheckResponse({
+    required this.username,
+    required this.available,
+    required this.message,
+  });
+
+  factory UsernameCheckResponse.fromJson(Map<String, dynamic> json) {
+    return UsernameCheckResponse(
+      username: json['username'] ?? '',
+      available: json['available'] ?? false,
+      message: json['message'] ?? '',
+    );
+  }
+
+  @override
+  String toString() => 'UsernameCheckResponse(username: $username, available: $available)';
+}
+
+/// Requête de mise à jour de profil
 class UpdateProfileRequest {
   final String? firstName;
   final String? lastName;
   final String? email;
   final String? password;
+  final String? username;  // ===== AJOUT USERNAME =====
   final String? avatarUrl;
   final String? bio;
-  final String? username;
 
   const UpdateProfileRequest({
     this.firstName,
     this.lastName,
     this.email,
     this.password,
+    this.username,  // ===== USERNAME MODIFIABLE =====
     this.avatarUrl,
     this.bio,
-    this.username,
   });
 
   Map<String, dynamic> toJson() {
@@ -231,11 +262,14 @@ class UpdateProfileRequest {
     if (lastName != null) json['last_name'] = lastName;
     if (email != null) json['email'] = email;
     if (password != null) json['password'] = password;
+    if (username != null) json['username'] = username;  // ===== INCLURE USERNAME =====
     if (avatarUrl != null) json['avatar_url'] = avatarUrl;
     if (bio != null) json['bio'] = bio;
-    if (username != null) json['username'] = username;
     return json;
   }
+
+  @override
+  String toString() => 'UpdateProfileRequest(username: $username, email: $email, hasPassword: ${password != null})';
 }
 
 /// États d'authentification
@@ -247,17 +281,38 @@ enum AuthState {
   error,
 }
 
-/// Modèle pour les erreurs d'authentification
+/// Erreurs d'authentification
 class AuthError {
   final String message;
-  final String? field;
   final int? statusCode;
+  final String? field;
 
   const AuthError({
     required this.message,
-    this.field,
     this.statusCode,
+    this.field,
   });
+
+  factory AuthError.network() {
+    return const AuthError(
+      message: 'Erreur de connexion réseau',
+      statusCode: 0,
+    );
+  }
+
+  factory AuthError.server() {
+    return const AuthError(
+      message: 'Erreur serveur',
+      statusCode: 500,
+    );
+  }
+
+  factory AuthError.unauthorized() {
+    return const AuthError(
+      message: 'Non autorisé',
+      statusCode: 401,
+    );
+  }
 
   factory AuthError.fromApiResponse(String message, int? statusCode) {
     return AuthError(
@@ -266,7 +321,7 @@ class AuthError {
     );
   }
 
-  factory AuthError.validation(String message, {String? field}) {
+  factory AuthError.validation(String field, String message) {
     return AuthError(
       message: message,
       field: field,
@@ -274,26 +329,13 @@ class AuthError {
     );
   }
 
-  factory AuthError.network() {
-    return const AuthError(
-      message: 'Problème de connexion réseau',
-    );
-  }
-
-  factory AuthError.server() {
-    return const AuthError(
-      message: 'Erreur serveur, veuillez réessayer',
-      statusCode: 500,
-    );
-  }
-
-  bool get isValidationError => statusCode == 400;
-  bool get isAuthError => statusCode == 401;
-  bool get isNetworkError => statusCode == null;
+  bool get isNetworkError => statusCode == 0;
   bool get isServerError => statusCode != null && statusCode! >= 500;
+  bool get isClientError => statusCode != null && statusCode! >= 400 && statusCode! < 500;
+  bool get isValidationError => statusCode == 400 && field != null;
 
   @override
-  String toString() => 'AuthError(message: $message, field: $field, statusCode: $statusCode)';
+  String toString() => 'AuthError(message: $message, statusCode: $statusCode, field: $field)';
 }
 
 /// Classe pour les résultats d'authentification
@@ -317,6 +359,11 @@ class AuthResult {
   }
 
   bool get isFailure => !isSuccess;
+
+  @override
+  String toString() => isSuccess 
+      ? 'AuthResult.success($data)' 
+      : 'AuthResult.failure($error)';
 }
 
 /// Classe pour les résultats d'utilisateur
@@ -340,4 +387,38 @@ class UserResult {
   }
 
   bool get isFailure => !isSuccess;
+
+  @override
+  String toString() => isSuccess 
+      ? 'UserResult.success($data)' 
+      : 'UserResult.failure($error)';
+}
+
+/// Classe pour les résultats de vérification de username
+class UsernameCheckResult {
+  final bool isSuccess;
+  final UsernameCheckResponse? data;
+  final AuthError? error;
+
+  const UsernameCheckResult._({
+    required this.isSuccess,
+    this.data,
+    this.error,
+  });
+
+  factory UsernameCheckResult.success(UsernameCheckResponse data) {
+    return UsernameCheckResult._(isSuccess: true, data: data);
+  }
+
+  factory UsernameCheckResult.failure(AuthError error) {
+    return UsernameCheckResult._(isSuccess: false, error: error);
+  }
+
+  bool get isFailure => !isSuccess;
+  bool get isAvailable => data?.available ?? false;
+
+  @override
+  String toString() => isSuccess 
+      ? 'UsernameCheckResult.success(${data?.username}: ${data?.available})' 
+      : 'UsernameCheckResult.failure($error)';
 }

@@ -3,6 +3,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../auth_provider.dart';
+import '../../models/auth_models.dart';
+import 'dart:async';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -15,6 +17,7 @@ class _RegisterPageState extends State<RegisterPage> {
   final _formKey = GlobalKey<FormState>();
   final _firstNameController = TextEditingController();
   final _lastNameController = TextEditingController();
+  final _usernameController = TextEditingController();  // ===== AJOUT USERNAME =====
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
@@ -23,10 +26,20 @@ class _RegisterPageState extends State<RegisterPage> {
   bool _obscureConfirmPassword = true;
   bool _isLoading = false;
 
+  // ===== ÉTAT VALIDATION USERNAME =====
+  Timer? _usernameDebounceTimer;
+  String? _usernameValidationMessage;
+  bool _isCheckingUsername = false;
+  bool _isUsernameValid = false;
+
   @override
   void dispose() {
+    // ===== ANNULER TIMER AVANT DISPOSE =====
+    _usernameDebounceTimer?.cancel();
+    
     _firstNameController.dispose();
     _lastNameController.dispose();
+    _usernameController.dispose();  // ===== DISPOSE USERNAME =====
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
@@ -39,11 +52,18 @@ class _RegisterPageState extends State<RegisterPage> {
     
     // Écouter les changements d'état d'authentification
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<AuthProvider>().addListener(_onAuthStateChanged);
+      if (mounted) {
+        context.read<AuthProvider>().addListener(_onAuthStateChanged);
+      }
     });
+
+    // ===== ÉCOUTER CHANGEMENTS USERNAME =====
+    _usernameController.addListener(_onUsernameChanged);
   }
 
   void _onAuthStateChanged() {
+    if (!mounted) return;  // ===== PROTECTION MOUNTED =====
+    
     final authProvider = context.read<AuthProvider>();
     
     if (authProvider.isAuthenticated) {
@@ -55,9 +75,77 @@ class _RegisterPageState extends State<RegisterPage> {
     }
     
     // Mettre à jour l'état de chargement
-    if (mounted) {
+    setState(() {
+      _isLoading = authProvider.isLoading;
+    });
+  }
+
+  // ===== VALIDATION USERNAME EN TEMPS RÉEL =====
+  void _onUsernameChanged() {
+    final username = _usernameController.text.trim();
+    
+    // Annuler le timer précédent
+    _usernameDebounceTimer?.cancel();
+    
+    // Validation côté client d'abord
+    final clientValidation = _validateUsernameFormat(username);
+    if (clientValidation != null) {
+      // ===== VÉRIFICATION MOUNTED =====
+      if (mounted) {
+        setState(() {
+          _usernameValidationMessage = clientValidation;
+          _isCheckingUsername = false;
+          _isUsernameValid = false;
+        });
+      }
+      return;
+    }
+
+    // Si validation client OK, vérifier disponibilité avec délai
+    _usernameDebounceTimer = Timer(const Duration(milliseconds: 800), () {
+      // ===== VÉRIFICATION MOUNTED DANS TIMER =====
+      if (mounted) {
+        _checkUsernameAvailability(username);
+      }
+    });
+  }
+
+  Future<void> _checkUsernameAvailability(String username) async {
+    if (username.isEmpty || username.length < 3) return;
+    
+    // ===== VÉRIFICATION MOUNTED AVANT setState =====
+    if (!mounted) return;
+    
+    setState(() {
+      _isCheckingUsername = true;
+      _usernameValidationMessage = 'Vérification...';
+    });
+
+    try {
+      final authProvider = context.read<AuthProvider>();
+      final isAvailable = await authProvider.checkUsernameAvailability(username);
+      
+      // ===== VÉRIFICATION MOUNTED APRÈS ASYNC =====
+      if (!mounted) return;
+      
       setState(() {
-        _isLoading = authProvider.isLoading;
+        _isCheckingUsername = false;
+        if (isAvailable) {
+          _usernameValidationMessage = '✓ Username disponible';
+          _isUsernameValid = true;
+        } else {
+          _usernameValidationMessage = '✗ Username déjà pris';
+          _isUsernameValid = false;
+        }
+      });
+    } catch (e) {
+      // ===== VÉRIFICATION MOUNTED APRÈS CATCH =====
+      if (!mounted) return;
+      
+      setState(() {
+        _isCheckingUsername = false;
+        _usernameValidationMessage = 'Erreur de vérification';
+        _isUsernameValid = false;
       });
     }
   }
@@ -89,25 +177,38 @@ class _RegisterPageState extends State<RegisterPage> {
   Future<void> _submitRegister() async {
     if (!_formKey.currentState!.validate()) return;
     
+    // Vérifier que le username est valide
+    if (!_isUsernameValid) {
+      _showErrorSnackBar('Veuillez choisir un username valide et disponible');
+      return;
+    }
+    
     FocusScope.of(context).unfocus();
     
     final firstName = _firstNameController.text.trim();
     final lastName = _lastNameController.text.trim();
+    final username = _usernameController.text.trim();  // ===== RÉCUPÉRER USERNAME =====
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
 
     try {
       final authProvider = context.read<AuthProvider>();
-      final success = await authProvider.register(firstName, lastName, email, password);
+      // ===== PASSER USERNAME À LA MÉTHODE REGISTER =====
+      final success = await authProvider.register(firstName, lastName, username, email, password);
+
+      // ===== VÉRIFICATION MOUNTED APRÈS ASYNC =====
+      if (!mounted) return;
 
       if (success) {
-        _showSuccessSnackBar('Inscription réussie ! Bienvenue sur OnlyFlick !');
+        _showSuccessSnackBar('Inscription réussie ! Bienvenue @$username sur OnlyFlick !');
         // La navigation se fait automatiquement via _onAuthStateChanged
       }
       // Les erreurs sont gérées automatiquement via _onAuthStateChanged
       
     } catch (e) {
-      _showErrorSnackBar('Une erreur inattendue s\'est produite');
+      if (mounted) {
+        _showErrorSnackBar('Une erreur inattendue s\'est produite');
+      }
     }
   }
 
@@ -128,6 +229,36 @@ class _RegisterPageState extends State<RegisterPage> {
     if (value.length < 2) {
       return 'Le nom doit contenir au moins 2 caractères';
     }
+    return null;
+  }
+
+  // ===== VALIDATION USERNAME =====
+  String? _validateUsernameFormat(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Le username est requis';
+    }
+    
+    // Utiliser la validation des modèles
+    final request = RegisterRequest(
+      firstName: 'temp',
+      lastName: 'temp',
+      username: value,
+      email: 'temp@temp.com',
+      password: 'temp123',
+    );
+    
+    return request.validateUsername();
+  }
+
+  String? _validateUsername(String? value) {
+    final formatError = _validateUsernameFormat(value);
+    if (formatError != null) return formatError;
+    
+    // Vérifier que la vérification a été faite et est valide
+    if (!_isUsernameValid && _usernameValidationMessage != 'Vérification...' && _usernameValidationMessage != null) {
+      return 'Username non disponible ou invalide';
+    }
+    
     return null;
   }
 
@@ -159,6 +290,79 @@ class _RegisterPageState extends State<RegisterPage> {
       return 'Les mots de passe ne correspondent pas';
     }
     return null;
+  }
+
+  // ===== WIDGET HELPER POUR CHAMP USERNAME =====
+  Widget _buildUsernameField() {
+    Color? helperTextColor;
+    IconData? helperIcon;
+    
+    if (_isCheckingUsername) {
+      helperTextColor = Colors.orange;
+      helperIcon = null; // Pas d'icône pendant le chargement
+    } else if (_isUsernameValid) {
+      helperTextColor = Colors.green;
+      helperIcon = Icons.check_circle;
+    } else if (_usernameValidationMessage != null && _usernameValidationMessage != 'Vérification...') {
+      helperTextColor = Colors.red;
+      helperIcon = Icons.error;
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextFormField(
+          controller: _usernameController,
+          textInputAction: TextInputAction.next,
+          enabled: !_isLoading,
+          style: const TextStyle(color: Colors.black),
+          decoration: _inputDecoration.copyWith(
+            hintText: 'Username (ex: johndoe)',
+            prefixIcon: const Icon(Icons.alternate_email, color: Colors.black54),
+            suffixIcon: _isCheckingUsername 
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: Padding(
+                      padding: EdgeInsets.all(12.0),
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                : helperIcon != null 
+                    ? Icon(helperIcon, color: helperTextColor, size: 20)
+                    : null,
+          ),
+          validator: _validateUsername,
+        ),
+        if (_usernameValidationMessage != null) ...[
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              if (_isCheckingUsername) ...[
+                const SizedBox(
+                  width: 12,
+                  height: 12,
+                  child: CircularProgressIndicator(strokeWidth: 1.5),
+                ),
+                const SizedBox(width: 6),
+              ] else if (helperIcon != null) ...[
+                Icon(helperIcon, size: 14, color: helperTextColor),
+                const SizedBox(width: 4),
+              ],
+              Expanded(
+                child: Text(
+                  _usernameValidationMessage!,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: helperTextColor,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
   }
 
   @override
@@ -222,6 +426,10 @@ class _RegisterPageState extends State<RegisterPage> {
                             ),
                             const SizedBox(height: 16),
 
+                            // ===== CHAMP USERNAME AVEC VALIDATION TEMPS RÉEL =====
+                            _buildUsernameField(),
+                            const SizedBox(height: 16),
+
                             // Champ email
                             TextFormField(
                               controller: _emailController,
@@ -253,9 +461,11 @@ class _RegisterPageState extends State<RegisterPage> {
                                     color: Colors.black54,
                                   ),
                                   onPressed: () {
-                                    setState(() {
-                                      _obscurePassword = !_obscurePassword;
-                                    });
+                                    if (mounted) {
+                                      setState(() {
+                                        _obscurePassword = !_obscurePassword;
+                                      });
+                                    }
                                   },
                                 ),
                               ),
@@ -279,9 +489,11 @@ class _RegisterPageState extends State<RegisterPage> {
                                     color: Colors.black54,
                                   ),
                                   onPressed: () {
-                                    setState(() {
-                                      _obscureConfirmPassword = !_obscureConfirmPassword;
-                                    });
+                                    if (mounted) {
+                                      setState(() {
+                                        _obscureConfirmPassword = !_obscureConfirmPassword;
+                                      });
+                                    }
                                   },
                                 ),
                               ),
@@ -327,7 +539,9 @@ class _RegisterPageState extends State<RegisterPage> {
                             // Lien vers la connexion
                             GestureDetector(
                               onTap: _isLoading ? null : () {
-                                context.goNamed('login');
+                                if (mounted) {
+                                  context.goNamed('login');
+                                }
                               },
                               child: RichText(
                                 text: TextSpan(

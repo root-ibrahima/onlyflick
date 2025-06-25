@@ -167,11 +167,18 @@ class _ProfileScreenState extends State<ProfileScreen>
           child: CircleAvatar(
             radius: 38,
             backgroundColor: Colors.grey[300],
-            backgroundImage: user?.effectiveAvatarUrl.isNotEmpty == true
-                ? NetworkImage(user!.effectiveAvatarUrl)
+            backgroundImage: user?.avatarUrl?.isNotEmpty == true
+                ? NetworkImage(user!.avatarUrl)
                 : null,
-            child: user?.effectiveAvatarUrl.isEmpty == true
-                ? const Icon(Icons.person, color: Colors.grey, size: 40)
+            child: user?.avatarUrl?.isEmpty != false
+                ? Text(
+                    user?.initials ?? '?',
+                    style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey,
+                    ),
+                  )
                 : null,
           ),
         ),
@@ -228,18 +235,26 @@ class _ProfileScreenState extends State<ProfileScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 🔥 CORRECTION : Utiliser le displayName comme nom d'affichage public
+          // ===== NOM D'AFFICHAGE PUBLIC : @USERNAME =====
           Text(
-            user?.displayName ?? 'Utilisateur',  // 🔥 displayName = username ou fullName
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            user?.displayName ?? 'Utilisateur',  // displayName retourne @username ou fullName
+            style: const TextStyle(
+              fontWeight: FontWeight.bold, 
+              fontSize: 18,
+              color: Colors.black,
+            ),
           ),
           const SizedBox(height: 4),
           
-          // 🔥 CORRECTION : Afficher @username style social media
-          if (user?.hasUsername == true) ...[
+          // ===== NOM COMPLET (PRIVÉ) - Plus petit et discret =====
+          if (user?.fullName?.isNotEmpty == true) ...[
             Text(
-              user!.usernameWithAt,  // 🔥 NOUVEAU : usernameWithAt retourne @username
-              style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+              user!.fullName,  // Prénom Nom (données privées)
+              style: TextStyle(
+                fontSize: 14, 
+                color: Colors.grey[600],
+                fontWeight: FontWeight.w500,
+              ),
             ),
             const SizedBox(height: 8),
           ],
@@ -778,6 +793,8 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   void _showSettingsMenu() {
+    final user = context.read<AuthProvider>().user;
+    
     showModalBottomSheet(
       context: context,
       builder: (context) => Container(
@@ -785,6 +802,15 @@ class _ProfileScreenState extends State<ProfileScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // ===== AFFICHAGE USERNAME DANS SETTINGS =====
+            if (user?.username?.isNotEmpty == true) ...[
+              ListTile(
+                leading: const Icon(Icons.person),
+                title: Text('Connecté en tant que'),
+                subtitle: Text(user!.displayName),  // @username
+              ),
+              const Divider(),
+            ],
             ListTile(
               leading: const Icon(Icons.settings),
               title: const Text('Paramètres'),
