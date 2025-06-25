@@ -1,10 +1,10 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../auth/auth_provider.dart';
-import '../../../../core/services/profile_service.dart';
-import '../../../../core/providers/profile_provider.dart'; 
+import '../../../../core/providers/profile_provider.dart';
 
 class ProfileScreen extends StatefulWidget {
   final bool isCreator;
@@ -54,7 +54,7 @@ class _ProfileScreenState extends State<ProfileScreen>
             backgroundColor: Colors.white,
             body: SafeArea(
               child: RefreshIndicator(
-                onRefresh: () => profileProvider.refresh(),
+                onRefresh: () => profileProvider.refreshAllData(),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -120,24 +120,26 @@ class _ProfileScreenState extends State<ProfileScreen>
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: profileProvider.isLoadingStats
-                  ? const [
-                      _LoadingStatColumn(),
-                      _LoadingStatColumn(),
-                      _LoadingStatColumn(),
-                    ]
+                  ? List.generate(3, (index) => const _LoadingStatColumn())
                   : [
                       _StatColumn(
-                        title: 'Posts',
                         value: _formatCount(profileProvider.stats.postsCount),
+                        title: 'Posts',
                       ),
                       _StatColumn(
-                        title: 'Abonnés',
                         value: _formatCount(profileProvider.stats.followersCount),
+                        title: 'Abonnés',
                       ),
-                      _StatColumn(
-                        title: 'Abonnements',
-                        value: _formatCount(profileProvider.stats.followingCount),
-                      ),
+                      if (user?.isCreator == true)
+                        _StatColumn(
+                          value: '${profileProvider.stats.totalEarnings.toStringAsFixed(1)}€',
+                          title: 'Revenus',
+                        )
+                      else
+                        _StatColumn(
+                          value: _formatCount(profileProvider.stats.followingCount),
+                          title: 'Abonnements',
+                        ),
                     ],
             ),
           ),
@@ -149,32 +151,22 @@ class _ProfileScreenState extends State<ProfileScreen>
   Widget _buildAvatar(dynamic user, ProfileProvider profileProvider) {
     return Stack(
       children: [
-        // Avatar principal
         Container(
+          width: 80,
+          height: 80,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             border: Border.all(color: Colors.grey[300]!, width: 2),
           ),
           child: CircleAvatar(
-            radius: 40,
-            backgroundColor: Colors.grey[100],
-            backgroundImage: user?.avatarUrl != null 
-                ? NetworkImage(user.avatarUrl)
-                : (user != null 
-                    ? NetworkImage('https://i.pravatar.cc/150?img=${user.id % 20}')
-                    : null),
-            child: user?.avatarUrl == null && user != null
-                ? Text(
-                    user.initials,
-                    style: const TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.grey,
-                    ),
-                  )
-                : (user == null 
-                    ? const Icon(Icons.person, color: Colors.grey, size: 40)
-                    : null),
+            radius: 38,
+            backgroundColor: Colors.grey[300],
+            backgroundImage: user?.effectiveAvatarUrl.isNotEmpty == true
+                ? NetworkImage(user!.effectiveAvatarUrl)
+                : null,
+            child: user?.effectiveAvatarUrl.isEmpty == true
+                ? const Icon(Icons.person, color: Colors.grey, size: 40)
+                : null,
           ),
         ),
         
@@ -252,11 +244,13 @@ class _ProfileScreenState extends State<ProfileScreen>
                 borderRadius: BorderRadius.circular(4),
               ),
               child: Text(
-                user?.bio ?? 'Ajoutez une bio... (tapez ici)',
+                user?.bio?.isNotEmpty == true 
+                    ? user!.bio 
+                    : 'Ajoutez une bio... (tapez ici)',
                 style: TextStyle(
                   fontSize: 14,
-                  color: user?.bio != null ? Colors.black : Colors.grey[500],
-                  fontStyle: user?.bio != null ? FontStyle.normal : FontStyle.italic,
+                  color: user?.bio?.isNotEmpty == true ? Colors.black : Colors.grey[500],
+                  fontStyle: user?.bio?.isNotEmpty == true ? FontStyle.normal : FontStyle.italic,
                 ),
               ),
             ),
@@ -315,8 +309,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                   : () => _editProfile(context, profileProvider),
               child: profileProvider.isUpdatingBio
                   ? const SizedBox(
-                      width: 20,
                       height: 20,
+                      width: 20,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
                         valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
@@ -330,19 +324,19 @@ class _ProfileScreenState extends State<ProfileScreen>
           ),
           
           if (userIsCreator) ...[
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             SizedBox(
-              height: 44,
+              height: 36,
               width: double.infinity,
               child: OutlinedButton(
                 style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: Colors.purple),
+                  side: const BorderSide(color: Colors.black),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
                 onPressed: () => _showCreatorStats(profileProvider),
                 child: const Text(
-                  'Statistiques créateur',
-                  style: TextStyle(color: Colors.purple, fontWeight: FontWeight.w600),
+                  'Voir les statistiques',
+                  style: TextStyle(color: Colors.black, fontWeight: FontWeight.w600),
                 ),
               ),
             ),
@@ -353,208 +347,130 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   Widget _buildGrid({required String type, required ProfileProvider profileProvider}) {
-    final posts = type == 'shop' 
-        ? profileProvider.userPosts.where((post) => post.isSubscriberOnly).toList()
-        : profileProvider.userPosts;
-
-    if (profileProvider.isLoadingPosts && posts.isEmpty) {
-      return _buildLoadingGrid();
+    if (profileProvider.isLoadingPosts) {
+      return const Center(
+        child: CircularProgressIndicator(),
+      );
     }
 
-    if (posts.isEmpty) {
-      return _buildEmptyGrid(type);
+    if (profileProvider.userPosts.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              type == 'shop' ? Icons.shopping_bag_outlined : Icons.grid_on_rounded,
+              size: 64,
+              color: Colors.grey[400],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              type == 'shop' 
+                  ? 'Aucun contenu premium'
+                  : 'Aucun post encore',
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.grey[600],
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              type == 'shop'
+                  ? 'Créez du contenu exclusif pour vos abonnés'
+                  : 'Commencez à partager vos moments',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey[500],
+              ),
+            ),
+          ],
+        ),
+      );
     }
 
     return GridView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 2),
+      padding: const EdgeInsets.all(16),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 3,
-        crossAxisSpacing: 2,
-        mainAxisSpacing: 2,
+        crossAxisSpacing: 8,
+        mainAxisSpacing: 8,
       ),
-      itemCount: posts.length + (profileProvider.hasMorePosts ? 3 : 0),
+      itemCount: profileProvider.userPosts.length,
       itemBuilder: (context, index) {
-        if (index >= posts.length) {
-          return _buildLoadingTile();
-        }
-
-        final post = posts[index];
-        return _buildPostTile(post, profileProvider);
+        final post = profileProvider.userPosts[index];
+        return GestureDetector(
+          onTap: () => _onPostTap(post),
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              color: Colors.grey[300],
+            ),
+                            child: post.imageUrl.isNotEmpty
+                ? ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.network(
+                      post.imageUrl,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        return Container(
+                          color: Colors.grey[300],
+                          child: const Icon(Icons.error),
+                        );
+                      },
+                    ),
+                  )
+                : Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      color: Colors.grey[300],
+                    ),
+                    child: const Icon(
+                      Icons.image,
+                      color: Colors.grey,
+                      size: 32,
+                    ),
+                  ),
+          ),
+        );
       },
     );
   }
 
-  Widget _buildPostTile(UserPost post, ProfileProvider profileProvider) {
-    return GestureDetector(
-      onTap: () => _onPostTap(post),
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.grey[200],
-                border: Border.all(color: Colors.grey[300]!),
-              ),
-              child: post.imageUrl != null
-                  ? Image.network(
-                      post.imageUrl!,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) => Icon(
-                        Icons.image_outlined,
-                        color: Colors.grey[400],
-                        size: 32,
-                      ),
-                    )
-                  : Icon(
-                      Icons.image_outlined,
-                      color: Colors.grey[400],
-                      size: 32,
-                    ),
-            ),
-          ),
-          
-          // Indicateur vidéo
-          if (post.isVideo)
-            const Positioned(
-              top: 6,
-              left: 6,
-              child: Icon(Icons.play_circle_fill, size: 16, color: Colors.white),
-            ),
-          
-          // Overlay pour les posts privés
-          if (post.isSubscriberOnly)
-            Positioned(
-              top: 6,
-              right: 6,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.orange,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Text(
-                  'VIP',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 8,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ),
-          
-          // Statistiques du post
-          Positioned(
-            bottom: 6,
-            right: 6,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.7),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  GestureDetector(
-                    onTap: () => profileProvider.togglePostLike(post.id),
-                    child: Icon(
-                      post.isLiked ? Icons.favorite : Icons.favorite_border,
-                      color: post.isLiked ? Colors.red : Colors.white,
-                      size: 12,
-                    ),
-                  ),
-                  const SizedBox(width: 2),
-                  Text(
-                    post.likesCount.toString(),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 8,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  // ===== MÉTHODES D'INTERACTION =====
 
-  Widget _buildLoadingGrid() {
-    return GridView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 2),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        crossAxisSpacing: 2,
-        mainAxisSpacing: 2,
-      ),
-      itemCount: 9,
-      itemBuilder: (_, index) => _buildLoadingTile(),
-    );
-  }
-
-  Widget _buildEmptyGrid(String type) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            type == 'shop' ? Icons.shopping_bag_outlined : Icons.photo_library_outlined,
-            size: 64,
-            color: Colors.grey[400],
-          ),
-          const SizedBox(height: 16),
-          Text(
-            type == 'shop' ? 'Aucun contenu premium' : 'Aucun post pour le moment',
-            style: TextStyle(
-              fontSize: 16,
-              color: Colors.grey[600],
+  Future<void> _changeAvatar(ProfileProvider profileProvider) async {
+    final ImageSource? source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt),
+              title: const Text('Prendre une photo'),
+              onTap: () => Navigator.pop(context, ImageSource.camera),
             ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Commencez à partager votre contenu !',
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey[500],
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text('Galerie'),
+              onTap: () => Navigator.pop(context, ImageSource.gallery),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLoadingTile() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.grey[300],
-        border: Border.all(color: Colors.grey[300]!),
-      ),
-      child: const Center(
-        child: SizedBox(
-          width: 16,
-          height: 16,
-          child: CircularProgressIndicator(strokeWidth: 2),
+            ListTile(
+              leading: const Icon(Icons.cancel),
+              title: const Text('Annuler'),
+              onTap: () => Navigator.pop(context),
+            ),
+          ],
         ),
       ),
     );
-  }
 
-  // ===== ACTIONS =====
-
-  Future<void> _changeAvatar(ProfileProvider profileProvider) async {
-    try {
-      final XFile? image = await _imagePicker.pickImage(
-        source: ImageSource.gallery,
-        maxWidth: 512,
-        maxHeight: 512,
-        imageQuality: 80,
-      );
-
-      if (image != null) {
-        final success = await profileProvider.uploadAvatar(image.path);
-        
+    if (source != null) {
+      final XFile? image = await _imagePicker.pickImage(source: source);
+      if (image != null && mounted) {
+        final File imageFile = File(image.path);
+        final success = await profileProvider.uploadAvatar(imageFile);
         if (success && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -564,38 +480,50 @@ class _ProfileScreenState extends State<ProfileScreen>
           );
         }
       }
-    } catch (e) {
-      debugPrint('❌ Error picking image: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Erreur lors de la sélection de l\'image'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
     }
   }
 
   void _editBio(String currentBio, ProfileProvider profileProvider) {
+    final TextEditingController controller = TextEditingController(text: currentBio);
+    
     showDialog(
       context: context,
-      builder: (context) => _ProfileEditDialog(
-        title: 'Modifier la bio',
-        initialValue: currentBio,
-        maxLength: 150,
-        onSave: (newBio) async {
-          final success = await profileProvider.updateBio(newBio);
-          if (success && mounted) {
-            Navigator.of(context).pop();
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Bio mise à jour avec succès !'),
-                backgroundColor: Colors.green,
-              ),
-            );
-          }
-        },
+      builder: (context) => AlertDialog(
+        title: const Text('Modifier la bio'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            hintText: 'Parlez-nous de vous...',
+            border: OutlineInputBorder(),
+          ),
+          maxLines: 3,
+          maxLength: 200,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Annuler'),
+          ),
+          TextButton(
+            onPressed: () async {
+              final newBio = controller.text.trim();
+              Navigator.pop(context);
+              
+              if (newBio != currentBio) {
+                final success = await profileProvider.updateBio(newBio);
+                if (success && mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Bio mise à jour avec succès !'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                }
+              }
+            },
+            child: const Text('Sauvegarder'),
+          ),
+        ],
       ),
     );
   }
@@ -673,19 +601,18 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   Future<void> _handleCreatorUpgrade(ProfileProvider profileProvider) async {
-    final success = await profileProvider.requestCreatorUpgrade();
-    
-    if (success && mounted) {
+    // TODO: Implémenter la demande de passage créateur
+    if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Demande de passage en créateur envoyée !'),
-          backgroundColor: Colors.green,
+          content: Text('Fonctionnalité en cours de développement'),
+          backgroundColor: Colors.orange,
         ),
       );
     }
   }
 
-  void _onPostTap(UserPost post) {
+  void _onPostTap(dynamic post) {
     debugPrint('Post tapped: ${post.id}');
     // TODO: Navigation vers le détail du post
   }
@@ -786,240 +713,55 @@ class BecomeCreatorWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.all(16),
-      padding: const EdgeInsets.all(20),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            Colors.purple.withOpacity(0.1),
-            Colors.pink.withOpacity(0.1),
-          ],
+        gradient: const LinearGradient(
+          colors: [Colors.purple, Colors.pink, Colors.orange],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: Colors.purple.withOpacity(0.3),
-          width: 1,
-        ),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(
-            Icons.star_outline,
-            size: 48,
-            color: Colors.purple,
-          ),
-          const SizedBox(height: 16),
           const Text(
-            'Devenez Créateur',
+            '✨ Devenez créateur',
             style: TextStyle(
-              fontSize: 20,
+              fontSize: 18,
               fontWeight: FontWeight.bold,
-              color: Colors.black,
+              color: Colors.white,
             ),
           ),
           const SizedBox(height: 8),
           const Text(
-            'Partagez votre contenu et gagnez de l\'argent avec vos abonnés !',
-            textAlign: TextAlign.center,
+            'Partagez du contenu exclusif et gagnez de l\'argent avec vos abonnés !',
             style: TextStyle(
               fontSize: 14,
-              color: Colors.grey,
+              color: Colors.white,
             ),
           ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () {
-                    _showCreatorInfoDialog(context);
-                  },
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: Colors.purple),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  child: const Text(
-                    'En savoir plus',
-                    style: TextStyle(color: Colors.purple),
-                  ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: Colors.purple,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: onRequestUpgrade,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.purple,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  child: const Text(
-                    'Postuler',
-                    style: TextStyle(color: Colors.white),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showCreatorInfoDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Programme Créateur'),
-        content: const Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('En tant que créateur, vous pouvez :'),
-            SizedBox(height: 8),
-            Text('• Publier du contenu exclusif'),
-            Text('• Recevoir des abonnements payants'),
-            Text('• Interagir avec vos fans'),
-            Text('• Gagner de l\'argent avec votre contenu'),
-            SizedBox(height: 16),
-            Text(
-              'Contactez notre équipe pour commencer !',
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Fermer'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// Dialogue d'édition
-class _ProfileEditDialog extends StatefulWidget {
-  final String title;
-  final String initialValue;
-  final int maxLength;
-  final Function(String) onSave;
-
-  const _ProfileEditDialog({
-    required this.title,
-    required this.initialValue,
-    required this.maxLength,
-    required this.onSave,
-  });
-
-  @override
-  State<_ProfileEditDialog> createState() => _ProfileEditDialogState();
-}
-
-class _ProfileEditDialogState extends State<_ProfileEditDialog> {
-  late TextEditingController _controller;
-  bool _isLoading = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController(text: widget.initialValue);
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(widget.title),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: _controller,
-            maxLength: widget.maxLength,
-            maxLines: widget.maxLength > 50 ? 3 : 1,
-            decoration: InputDecoration(
-              hintText: 'Entrez votre texte...',
-              border: const OutlineInputBorder(),
-              counterStyle: TextStyle(
-                color: Colors.grey[600],
-                fontSize: 12,
+              onPressed: onRequestUpgrade,
+              child: const Text(
+                'Faire une demande',
+                style: TextStyle(fontWeight: FontWeight.bold),
               ),
             ),
-            enabled: !_isLoading,
           ),
-          if (_isLoading)
-            const Padding(
-              padding: EdgeInsets.only(top: 16),
-              child: LinearProgressIndicator(),
-            ),
         ],
       ),
-      actions: [
-        TextButton(
-          onPressed: _isLoading ? null : () => Navigator.of(context).pop(),
-          child: const Text('Annuler'),
-        ),
-        ElevatedButton(
-          onPressed: _isLoading ? null : _handleSave,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.black,
-            foregroundColor: Colors.white,
-          ),
-          child: _isLoading
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                  ),
-                )
-              : const Text('Sauvegarder'),
-        ),
-      ],
     );
-  }
-
-  Future<void> _handleSave() async {
-    if (_controller.text.trim().length > widget.maxLength) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Le texte ne peut pas dépasser ${widget.maxLength} caractères'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
-
-    setState(() => _isLoading = true);
-
-    try {
-      await widget.onSave(_controller.text.trim());
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Erreur lors de la sauvegarde'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
-    }
   }
 }
