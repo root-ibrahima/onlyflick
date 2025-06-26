@@ -63,7 +63,7 @@ class _MainScreenState extends State<MainScreen> {
         // Construire les écrans dynamiquement selon le rôle
         final screens = [
           FeedScreen(isCreator: isCreator, onCreatePost: _navigateToCreatePost), // ← Passer la fonction
-          const SearchScreen(),
+          const SearchPage(),
           ProfileScreen(isCreator: isCreator),
         ];
         
