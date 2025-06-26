@@ -4,15 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/models/search_models.dart';
-import '../../../../core/providers/search_provider.dart' ;
-
-import '../widgets/search_bar_widget.dart';
-import '../widgets/search_suggestions_widget.dart';
-import '../widgets/posts_grid_widget.dart';
-import '../widgets/users_list_widget.dart';
-import '../widgets/discovery_feed_widget.dart';
-import '../widgets/tags_filter_widget.dart';
-import '../widgets/trending_tags_widget.dart';
+import '../../../../core/providers/search_provider.dart';
 
 class SearchPage extends StatefulWidget {
   const SearchPage({super.key});
@@ -21,71 +13,40 @@ class SearchPage extends StatefulWidget {
   State<SearchPage> createState() => _SearchPageState();
 }
 
-class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
-  late TabController _tabController;
+class _SearchPageState extends State<SearchPage> {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
-  
-  bool _showSuggestions = false;
-  int _currentTabIndex = 0;
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
-    _searchFocusNode.addListener(_onSearchFocusChanged);
     _searchController.addListener(_onSearchTextChanged);
-    
-    // Initialiser le provider au premier build
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initializeProvider();
-    });
+    _setupScrollListener();
   }
 
-  void _initializeProvider() {
-    final provider = context.read<SearchProvider>();
-    provider.initialize();
-  }
-
-  void _onSearchFocusChanged() {
-    setState(() {
-      _showSuggestions = _searchFocusNode.hasFocus && _searchController.text.isNotEmpty;
+  void _setupScrollListener() {
+    _scrollController.addListener(() {
+      if (_searchController.text.isNotEmpty && 
+          _scrollController.position.pixels >=
+          _scrollController.position.maxScrollExtent - 200) {
+        // Charger plus d'utilisateurs si on arrive en bas
+        final searchProvider = context.read<SearchProvider>();
+        if (!searchProvider.isLoadingMoreSearch) {
+          searchProvider.loadMoreUserSearchResults();
+        }
+      }
     });
   }
 
   void _onSearchTextChanged() {
+    final query = _searchController.text.trim();
     final provider = context.read<SearchProvider>();
-    final query = _searchController.text;
     
-    if (query.isNotEmpty) {
-      provider.loadSuggestions(query);
-      setState(() {
-        _showSuggestions = _searchFocusNode.hasFocus;
-      });
+    if (query.isNotEmpty && query.length >= 2) {
+      provider.searchUsers(query);
     } else {
-      provider.clearSuggestions();
-      setState(() {
-        _showSuggestions = false;
-      });
-    }
-  }
-
-  void _onSuggestionTap(SearchSuggestion suggestion) {
-    _searchController.text = suggestion.text;
-    _searchFocusNode.unfocus();
-    setState(() {
-      _showSuggestions = false;
-    });
-    
-    final provider = context.read<SearchProvider>();
-    if (suggestion.isUser) {
-      // Basculer sur l'onglet utilisateurs et rechercher
-      _tabController.animateTo(1);
-      provider.search(query: suggestion.text);
-    } else if (suggestion.isTag && suggestion.category != null) {
-      // Ajouter le tag aux filtres et basculer sur l'onglet posts
-      _tabController.animateTo(0);
-      provider.toggleSearchTag(suggestion.category!);
+      provider.clearUserSearch();
     }
   }
 
@@ -93,35 +54,22 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
     if (query.trim().isEmpty) return;
     
     _searchFocusNode.unfocus();
-    setState(() {
-      _showSuggestions = false;
-    });
-    
     final provider = context.read<SearchProvider>();
-    provider.search(query: query.trim());
-    
-    // Basculer sur l'onglet approprié
-    if (_currentTabIndex == 2) {
-      _tabController.animateTo(0); // Passer de découverte à posts
-    }
+    provider.searchUsers(query.trim());
   }
 
   void _clearSearch() {
     _searchController.clear();
     _searchFocusNode.unfocus();
-    setState(() {
-      _showSuggestions = false;
-    });
-    
     final provider = context.read<SearchProvider>();
-    provider.clearSearch();
+    provider.clearUserSearch();
   }
 
   @override
   void dispose() {
-    _tabController.dispose();
     _searchController.dispose();
     _searchFocusNode.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -134,10 +82,7 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
           children: [
             _buildHeader(),
             _buildSearchSection(),
-            if (_showSuggestions) _buildSuggestions(),
-            if (!_showSuggestions) _buildTabBar(),
-            if (!_showSuggestions) _buildFiltersSection(),
-            if (!_showSuggestions) Expanded(child: _buildTabContent()),
+            Expanded(child: _buildSearchResults()),
           ],
         ),
       ),
@@ -145,14 +90,28 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
   }
 
   Widget _buildHeader() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      child: Text(
-        'OnlyFlick',
-        style: GoogleFonts.pacifico(
-          fontSize: 24,
-          color: Colors.black,
-        ),
+    return Container(
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        children: [
+          IconButton(
+            onPressed: () => Navigator.of(context).pop(),
+            icon: const Icon(Icons.arrow_back, color: Colors.black),
+          ),
+          Expanded(
+            child: Center(
+              child: Text(
+                'Rechercher des utilisateurs',
+                style: GoogleFonts.inter(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 48), // Pour équilibrer le bouton retour
+        ],
       ),
     );
   }
@@ -160,242 +119,100 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
   Widget _buildSearchSection() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: SearchBarWidget(
+      child: TextField(
         controller: _searchController,
         focusNode: _searchFocusNode,
         onSubmitted: _onSearchSubmitted,
-        onClear: _clearSearch,
-      ),
-    );
-  }
-
-  Widget _buildSuggestions() {
-    return Expanded(
-      child: SearchSuggestionsWidget(
-        onSuggestionTap: _onSuggestionTap,
-      ),
-    );
-  }
-
-  Widget _buildTabBar() {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.grey[100],
-        borderRadius: BorderRadius.circular(25),
-      ),
-      child: TabBar(
-        controller: _tabController,
-        onTap: (index) {
-          setState(() {
-            _currentTabIndex = index;
-          });
-        },
-        indicator: BoxDecoration(
+        style: const TextStyle(
+          fontSize: 16,
           color: Colors.black,
-          borderRadius: BorderRadius.circular(25),
         ),
-        labelColor: Colors.white,
-        unselectedLabelColor: Colors.black54,
-        labelStyle: const TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w600,
+        decoration: InputDecoration(
+          hintText: 'Nom, prénom ou @username...',
+          hintStyle: TextStyle(color: Colors.grey[500]),
+          prefixIcon: const Icon(Icons.search, color: Colors.black54),
+          suffixIcon: _searchController.text.isNotEmpty
+              ? IconButton(
+                  icon: const Icon(Icons.clear, color: Colors.black54),
+                  onPressed: _clearSearch,
+                )
+              : null,
+          filled: true,
+          fillColor: Colors.grey[100],
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide.none,
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide(color: Colors.grey[400]!),
+          ),
         ),
-        unselectedLabelStyle: const TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w500,
-        ),
-        tabs: const [
-          Tab(text: 'Posts'),
-          Tab(text: 'Utilisateurs'),
-          Tab(text: 'Découverte'),
-        ],
       ),
     );
   }
 
-  Widget _buildFiltersSection() {
-    if (_currentTabIndex == 1) return const SizedBox.shrink(); // Pas de filtres pour les utilisateurs
-    
-    return Column(
-      children: [
-        TagsFilterWidget(
-          isDiscoveryMode: _currentTabIndex == 2,
-        ),
-        if (_currentTabIndex == 2) const TrendingTagsWidget(),
-      ],
-    );
-  }
-
-  Widget _buildTabContent() {
-    return TabBarView(
-      controller: _tabController,
-      children: [
-        _buildPostsTab(),
-        _buildUsersTab(),
-        _buildDiscoveryTab(),
-      ],
-    );
-  }
-
-  Widget _buildPostsTab() {
+  Widget _buildSearchResults() {
     return Consumer<SearchProvider>(
       builder: (context, provider, child) {
-        if (provider.searchState == SearchState.initial) {
-          return _buildInitialPostsState();
-        }
-
-        if (provider.searchState == SearchState.loading) {
+        // État de chargement initial
+        if (provider.searchState == SearchState.loading && provider.searchResult.users.isEmpty) {
           return const Center(
             child: CircularProgressIndicator(color: Colors.black),
           );
         }
 
+        // Aucune recherche effectuée
+        if (_searchController.text.isEmpty || _searchController.text.length < 2) {
+          return _buildInitialState();
+        }
+
+        // État d'erreur
         if (provider.searchState == SearchState.error) {
           return _buildErrorState(
             provider.searchError ?? 'Erreur de recherche',
-            () => provider.search(query: _searchController.text),
+            () => provider.searchUsers(_searchController.text),
           );
         }
 
-        if (provider.searchResult.posts.isEmpty && _searchController.text.isNotEmpty) {
-          return _buildEmptyPostsState();
+        // Aucun résultat trouvé
+        if (provider.searchResult.users.isEmpty && provider.searchState != SearchState.loading) {
+          return _buildNoResultsState();
         }
 
-        return PostsGridWidget(
-          posts: provider.searchResult.posts,
-          hasMore: provider.hasMoreSearchResults,
-          isLoadingMore: provider.isLoadingMoreSearch,
-          onLoadMore: provider.loadMoreSearchResults,
-          onPostTap: (post) => provider.trackPostView(post),
-        );
+        // Afficher les utilisateurs trouvés
+        return _buildUsersList(provider);
       },
     );
   }
 
-  Widget _buildUsersTab() {
-    return Consumer<SearchProvider>(
-      builder: (context, provider, child) {
-        if (provider.searchState == SearchState.initial) {
-          return _buildInitialUsersState();
-        }
-
-        if (provider.searchState == SearchState.loading) {
-          return const Center(
-            child: CircularProgressIndicator(color: Colors.black),
-          );
-        }
-
-        if (provider.searchState == SearchState.error) {
-          return _buildErrorState(
-            provider.searchError ?? 'Erreur de recherche',
-            () => provider.search(query: _searchController.text),
-          );
-        }
-
-        if (provider.searchResult.users.isEmpty && _searchController.text.isNotEmpty) {
-          return _buildEmptyUsersState();
-        }
-
-        return UsersListWidget(
-          users: provider.searchResult.users,
-          hasMore: provider.hasMoreSearchResults,
-          isLoadingMore: provider.isLoadingMoreSearch,
-          onLoadMore: provider.loadMoreSearchResults,
-          onUserTap: (user) => provider.trackProfileView(user),
-        );
-      },
-    );
-  }
-
-  Widget _buildDiscoveryTab() {
-    return Consumer<SearchProvider>(
-      builder: (context, provider, child) {
-        if (provider.discoveryState == DiscoveryState.loading) {
-          return const Center(
-            child: CircularProgressIndicator(color: Colors.black),
-          );
-        }
-
-        if (provider.discoveryState == DiscoveryState.error) {
-          return _buildErrorState(
-            provider.discoveryError ?? 'Erreur de chargement',
-            () => provider.refreshDiscoveryFeed(),
-          );
-        }
-
-        return DiscoveryFeedWidget(
-          posts: provider.discoveryPosts,
-          hasMore: provider.hasMoreDiscovery,
-          isLoadingMore: provider.isLoadingMoreDiscovery,
-          isRefreshing: provider.discoveryState == DiscoveryState.refreshing,
-          onLoadMore: provider.loadMoreDiscoveryPosts,
-          onRefresh: provider.refreshDiscoveryFeed,
-          onPostTap: (post) => provider.trackPostView(post),
-          onLike: (post) => provider.togglePostLike(post),
-        );
-      },
-    );
-  }
-
-  Widget _buildInitialPostsState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.search,
-            size: 64,
-            color: Colors.grey[400],
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Rechercher des posts',
-            style: TextStyle(
-              fontSize: 18,
-              color: Colors.grey[600],
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Utilisez des mots-clés ou des tags\npour trouver du contenu',
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey[500],
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildInitialUsersState() {
+  Widget _buildInitialState() {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
             Icons.people_outline,
-            size: 64,
+            size: 80,
             color: Colors.grey[400],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 24),
           Text(
             'Rechercher des utilisateurs',
-            style: TextStyle(
-              fontSize: 18,
+            style: GoogleFonts.inter(
+              fontSize: 20,
+              fontWeight: FontWeight.w600,
               color: Colors.grey[600],
-              fontWeight: FontWeight.w500,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           Text(
-            'Tapez un nom ou @username\npour trouver des créateurs',
-            style: TextStyle(
+            'Tapez au moins 2 caractères pour\ncommencer votre recherche',
+            style: GoogleFonts.inter(
               fontSize: 14,
               color: Colors.grey[500],
+              height: 1.5,
             ),
             textAlign: TextAlign.center,
           ),
@@ -404,80 +221,32 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildEmptyPostsState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.search_off,
-            size: 64,
-            color: Colors.grey[400],
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Aucun post trouvé',
-            style: TextStyle(
-              fontSize: 18,
-              color: Colors.grey[600],
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Essayez avec d\'autres mots-clés\nou ajustez vos filtres',
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey[500],
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 16),
-          Consumer<SearchProvider>(
-            builder: (context, provider, child) {
-              return ElevatedButton(
-                onPressed: provider.clearSearchFilters,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.black,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                ),
-                child: const Text('Effacer les filtres'),
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEmptyUsersState() {
+  Widget _buildNoResultsState() {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
             Icons.person_search,
-            size: 64,
+            size: 80,
             color: Colors.grey[400],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 24),
           Text(
             'Aucun utilisateur trouvé',
-            style: TextStyle(
-              fontSize: 18,
+            style: GoogleFonts.inter(
+              fontSize: 20,
+              fontWeight: FontWeight.w600,
               color: Colors.grey[600],
-              fontWeight: FontWeight.w500,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           Text(
             'Vérifiez l\'orthographe ou\nessayez un autre nom',
-            style: TextStyle(
+            style: GoogleFonts.inter(
               fontSize: 14,
               color: Colors.grey[500],
+              height: 1.5,
             ),
             textAlign: TextAlign.center,
           ),
@@ -493,487 +262,249 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
         children: [
           Icon(
             Icons.error_outline,
-            size: 64,
+            size: 80,
             color: Colors.red[400],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 24),
           Text(
-            'Oups !',
-            style: TextStyle(
-              fontSize: 18,
+            'Une erreur s\'est produite',
+            style: GoogleFonts.inter(
+              fontSize: 20,
+              fontWeight: FontWeight.w600,
               color: Colors.grey[600],
-              fontWeight: FontWeight.w500,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           Text(
             error,
-            style: TextStyle(
+            style: GoogleFonts.inter(
               fontSize: 14,
               color: Colors.grey[500],
+              height: 1.5,
             ),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 24),
           ElevatedButton(
             onPressed: onRetry,
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.black,
               foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(12),
               ),
             ),
-            child: const Text('Réessayer'),
+            child: Text(
+              'Réessayer',
+              style: GoogleFonts.inter(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
         ],
       ),
     );
   }
-}
 
-// ===== WIDGETS MANQUANTS (À CRÉER DANS LE DOSSIER widgets/) =====
-
-// Widget pour la barre de recherche
-class SearchBarWidget extends StatelessWidget {
-  final TextEditingController controller;
-  final FocusNode focusNode;
-  final Function(String) onSubmitted;
-  final VoidCallback onClear;
-
-  const SearchBarWidget({
-    super.key,
-    required this.controller,
-    required this.focusNode,
-    required this.onSubmitted,
-    required this.onClear,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return TextField(
-      controller: controller,
-      focusNode: focusNode,
-      onSubmitted: onSubmitted,
-      style: const TextStyle(
-        fontSize: 16,
-        color: Colors.black,
-      ),
-      decoration: InputDecoration(
-        hintText: 'Rechercher des posts, utilisateurs...',
-        hintStyle: TextStyle(color: Colors.grey[500]),
-        prefixIcon: const Icon(Icons.search, color: Colors.black54),
-        suffixIcon: controller.text.isNotEmpty
-            ? IconButton(
-                icon: const Icon(Icons.clear, color: Colors.black54),
-                onPressed: onClear,
-              )
-            : null,
-        filled: true,
-        fillColor: Colors.grey[100],
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide.none,
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: Colors.grey[400]!),
-        ),
-      ),
-    );
-  }
-}
-
-// Widget pour les suggestions (placeholder)
-class SearchSuggestionsWidget extends StatelessWidget {
-  final Function(SearchSuggestion) onSuggestionTap;
-
-  const SearchSuggestionsWidget({
-    super.key,
-    required this.onSuggestionTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Consumer<SearchProvider>(
-      builder: (context, provider, child) {
-        if (provider.isLoadingSuggestions) {
-          return const Center(
-            child: Padding(
-              padding: EdgeInsets.all(32),
-              child: CircularProgressIndicator(color: Colors.black),
-            ),
-          );
-        }
-
-        if (provider.suggestions.isEmpty) {
-          return const Center(
-            child: Padding(
-              padding: EdgeInsets.all(32),
-              child: Text(
-                'Tapez pour voir des suggestions...',
-                style: TextStyle(color: Colors.grey),
-              ),
-            ),
-          );
-        }
-
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: provider.suggestions.length,
-          itemBuilder: (context, index) {
-            final suggestion = provider.suggestions[index];
-            return ListTile(
-              leading: suggestion.isUser
-                  ? CircleAvatar(
-                      backgroundImage: suggestion.avatarUrl != null
-                          ? NetworkImage(suggestion.avatarUrl!)
-                          : null,
-                      child: suggestion.avatarUrl == null
-                          ? const Icon(Icons.person)
-                          : null,
-                    )
-                  : Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: Colors.grey[200],
-                        shape: BoxShape.circle,
-                      ),
-                      child: Center(
-                        child: Text(
-                          suggestion.category?.emoji ?? '🏷️',
-                          style: const TextStyle(fontSize: 18),
-                        ),
-                      ),
-                    ),
-              title: Text(suggestion.display),
-              subtitle: Text(suggestion.isUser ? 'Utilisateur' : 'Tag'),
-              onTap: () => onSuggestionTap(suggestion),
-            );
-          },
-        );
-      },
-    );
-  }
-}
-
-// Placeholders pour les autres widgets (à implémenter)
-class TagsFilterWidget extends StatelessWidget {
-  final bool isDiscoveryMode;
-
-  const TagsFilterWidget({super.key, required this.isDiscoveryMode});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 50,
-      color: Colors.grey[50],
-      child: const Center(
-        child: Text('Filtres Tags - À implémenter'),
-      ),
-    );
-  }
-}
-
-class TrendingTagsWidget extends StatelessWidget {
-  const TrendingTagsWidget({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 40,
-      color: Colors.grey[50],
-      child: const Center(
-        child: Text('Tags Trending - À implémenter'),
-      ),
-    );
-  }
-}
-
-class PostsGridWidget extends StatelessWidget {
-  final List<PostWithDetails> posts;
-  final bool hasMore;
-  final bool isLoadingMore;
-  final VoidCallback onLoadMore;
-  final Function(PostWithDetails) onPostTap;
-
-  const PostsGridWidget({
-    super.key,
-    required this.posts,
-    required this.hasMore,
-    required this.isLoadingMore,
-    required this.onLoadMore,
-    required this.onPostTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GridView.builder(
-      padding: const EdgeInsets.all(4),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        mainAxisSpacing: 2,
-        crossAxisSpacing: 2,
-      ),
-      itemCount: posts.length + (hasMore ? 1 : 0),
-      itemBuilder: (context, index) {
-        if (index >= posts.length) {
-          if (!isLoadingMore) onLoadMore();
-          return const Center(
-            child: Padding(
-              padding: EdgeInsets.all(16),
-              child: CircularProgressIndicator(color: Colors.black),
-            ),
-          );
-        }
-
-        final post = posts[index];
-        return GestureDetector(
-          onTap: () => onPostTap(post),
-          child: Stack(
-            children: [
-              Positioned.fill(
-                child: Image.network(
-                  post.mediaUrl,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) {
-                    return Container(
-                      color: Colors.grey[300],
-                      child: const Icon(Icons.error),
-                    );
-                  },
-                ),
-              ),
-              if (post.tags.isNotEmpty)
-                Positioned(
-                  top: 6,
-                  left: 6,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.black54,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      post.tags.first.emoji,
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ),
-                ),
-              Positioned(
-                bottom: 6,
-                right: 6,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.favorite, color: Colors.white, size: 14),
-                    const SizedBox(width: 2),
-                    Text(
-                      '${post.likesCount}',
-                      style: const TextStyle(color: Colors.white, fontSize: 12),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
-class UsersListWidget extends StatelessWidget {
-  final List<UserSearchResult> users;
-  final bool hasMore;
-  final bool isLoadingMore;
-  final VoidCallback onLoadMore;
-  final Function(UserSearchResult) onUserTap;
-
-  const UsersListWidget({
-    super.key,
-    required this.users,
-    required this.hasMore,
-    required this.isLoadingMore,
-    required this.onLoadMore,
-    required this.onUserTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: users.length + (hasMore ? 1 : 0),
-      itemBuilder: (context, index) {
-        if (index >= users.length) {
-          if (!isLoadingMore) onLoadMore();
-          return const Center(
-            child: Padding(
-              padding: EdgeInsets.all(16),
-              child: CircularProgressIndicator(color: Colors.black),
-            ),
-          );
-        }
-
-        final user = users[index];
-        return ListTile(
-          leading: CircleAvatar(
-            backgroundImage: user.avatarUrl != null
-                ? NetworkImage(user.avatarUrl!)
-                : null,
-            child: user.avatarUrl == null
-                ? Text(user.firstName[0].toUpperCase())
-                : null,
-          ),
-          title: Text(user.fullName),
-          subtitle: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(user.displayName),
-              if (user.bio != null && user.bio!.isNotEmpty)
-                Text(
-                  user.bio!,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: Colors.grey[600]),
-                ),
-            ],
-          ),
-          trailing: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              if (user.isCreator) const Icon(Icons.verified, color: Colors.blue, size: 16),
-              Text('${user.followersCount} abonnés', style: const TextStyle(fontSize: 12)),
-            ],
-          ),
-          onTap: () => onUserTap(user),
-        );
-      },
-    );
-  }
-}
-
-class DiscoveryFeedWidget extends StatelessWidget {
-  final List<PostWithDetails> posts;
-  final bool hasMore;
-  final bool isLoadingMore;
-  final bool isRefreshing;
-  final VoidCallback onLoadMore;
-  final Future<void> Function() onRefresh;
-  final Function(PostWithDetails) onPostTap;
-  final Function(PostWithDetails) onLike;
-
-  const DiscoveryFeedWidget({
-    super.key,
-    required this.posts,
-    required this.hasMore,
-    required this.isLoadingMore,
-    required this.isRefreshing,
-    required this.onLoadMore,
-    required this.onRefresh,
-    required this.onPostTap,
-    required this.onLike,
-  });
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildUsersList(SearchProvider provider) {
     return RefreshIndicator(
-      onRefresh: onRefresh,
+      onRefresh: () async {
+        if (_searchController.text.isNotEmpty) {
+          await provider.searchUsers(_searchController.text);
+        }
+      },
       child: ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: posts.length + (hasMore ? 1 : 0),
+        controller: _scrollController,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        itemCount: provider.searchResult.users.length + 
+                   (provider.isLoadingMoreSearch ? 1 : 0),
         itemBuilder: (context, index) {
-          if (index >= posts.length) {
-            if (!isLoadingMore) onLoadMore();
-            return const Center(
-              child: Padding(
-                padding: EdgeInsets.all(16),
+          // Indicateur de chargement en bas
+          if (index >= provider.searchResult.users.length) {
+            return const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(
                 child: CircularProgressIndicator(color: Colors.black),
               ),
             );
           }
 
-          final post = posts[index];
-          return Card(
-            margin: const EdgeInsets.only(bottom: 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                ListTile(
-                  leading: CircleAvatar(
-                    backgroundImage: post.author.avatarUrl != null
-                        ? NetworkImage(post.author.avatarUrl!)
-                        : null,
-                    child: post.author.avatarUrl == null
-                        ? Text(post.author.firstName[0].toUpperCase())
-                        : null,
-                  ),
-                  title: Text(post.author.fullName),
-                  subtitle: Text(post.timeAgo),
-                  trailing: post.author.isCreator
-                      ? const Icon(Icons.verified, color: Colors.blue)
+          final user = provider.searchResult.users[index];
+          return _buildUserCard(user, provider);
+        },
+      ),
+    );
+  }
+
+  Widget _buildUserCard(UserSearchResult user, SearchProvider provider) {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey[200]!, width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: InkWell(
+        onTap: () => _navigateToUserProfile(user, provider),
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              // Avatar utilisateur
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.grey[200]!, width: 2),
+                ),
+                child: CircleAvatar(
+                  radius: 26,
+                  backgroundImage: user.avatarUrl != null && user.avatarUrl!.isNotEmpty
+                      ? NetworkImage(user.avatarUrl!)
+                      : null,
+                  backgroundColor: Colors.grey[100],
+                  child: user.avatarUrl == null || user.avatarUrl!.isEmpty
+                      ? Text(
+                          user.firstName.isNotEmpty ? user.firstName[0].toUpperCase() : '?',
+                          style: GoogleFonts.inter(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey[600],
+                          ),
+                        )
                       : null,
                 ),
-                GestureDetector(
-                  onTap: () => onPostTap(post),
-                  child: AspectRatio(
-                    aspectRatio: 1,
-                    child: Image.network(
-                      post.mediaUrl,
-                      fit: BoxFit.cover,
-                      width: double.infinity,
+              ),
+              
+              const SizedBox(width: 16),
+              
+              // Informations utilisateur
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Nom complet avec badge créateur
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            '${user.firstName} ${user.lastName}',
+                            style: GoogleFonts.inter(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.black,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (user.isCreator) ...[
+                          const SizedBox(width: 6),
+                          Icon(
+                            Icons.verified,
+                            size: 16,
+                            color: Colors.blue[600],
+                          ),
+                        ],
+                      ],
                     ),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
+                    
+                    const SizedBox(height: 4),
+                    
+                    // Username
+                    Text(
+                      '@${user.username}',
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        color: Colors.grey[600],
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    
+                    // Bio si disponible
+                    if (user.bio != null && user.bio!.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        user.bio!,
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          color: Colors.grey[700],
+                          height: 1.3,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                    
+                    // Nombre d'abonnés si créateur
+                    if (user.isCreator && user.followersCount > 0) ...[
+                      const SizedBox(height: 6),
                       Row(
                         children: [
-                          GestureDetector(
-                            onTap: () => onLike(post),
-                            child: Icon(
-                              post.isLiked ? Icons.favorite : Icons.favorite_border,
-                              color: post.isLiked ? Colors.red : Colors.black,
+                          Icon(
+                            Icons.people,
+                            size: 14,
+                            color: Colors.grey[500],
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '${user.followersCount} abonné${user.followersCount > 1 ? 's' : ''}',
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          Text('${post.likesCount} likes'),
-                          const Spacer(),
-                          if (post.tags.isNotEmpty)
-                            Wrap(
-                              spacing: 4,
-                              children: post.tags.take(3).map((tag) {
-                                return Text(
-                                  tag.emoji,
-                                  style: const TextStyle(fontSize: 16),
-                                );
-                              }).toList(),
-                            ),
                         ],
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        post.title,
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      if (post.description.isNotEmpty)
-                        Text(
-                          post.description,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
                     ],
-                  ),
+                  ],
                 ),
-              ],
-            ),
-          );
-        },
+              ),
+              
+              // Flèche pour aller au profil
+              Icon(
+                Icons.arrow_forward_ios,
+                size: 16,
+                color: Colors.grey[400],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _navigateToUserProfile(UserSearchResult user, SearchProvider provider) {
+    // Enregistrer l'interaction de vue de profil
+    provider.trackProfileView(user);
+    
+    // TODO: Implémenter la navigation vers le profil utilisateur
+    debugPrint('Navigation vers le profil de ${user.username}');
+    
+    // Placeholder pour la navigation
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Profil de ${user.firstName} ${user.lastName}',
+          style: GoogleFonts.inter(fontWeight: FontWeight.w500),
+        ),
+        backgroundColor: Colors.black,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
+        duration: const Duration(seconds: 2),
       ),
     );
   }
