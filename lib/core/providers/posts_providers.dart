@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../services/posts_service.dart';
 import '../services/user_likes_cache_service.dart';
+import '../models/post_models.dart';
+
 
 /// États possibles pour le feed
 enum FeedState {

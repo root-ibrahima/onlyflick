@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/providers/posts_providers.dart';
 import '../../../../../core/services/posts_service.dart';
+import '../../../../core/models/post_models.dart';
 
 class ConnectedPostWidget extends StatefulWidget {
   final Post post;

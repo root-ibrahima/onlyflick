@@ -5,6 +5,8 @@ import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/models/search_models.dart';
 import '../../../../core/providers/search_provider.dart';
+import '../widgets/recommended_posts_section.dart';
+
 
 class SearchPage extends StatefulWidget {
   const SearchPage({super.key});
@@ -17,6 +19,10 @@ class _SearchPageState extends State<SearchPage> {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
+  OverlayEntry? _overlayEntry;
+  final LayerLink _layerLink = LayerLink();
+  List<UserSearchResult> _suggestions = [];
+
 
   @override
   void initState() {
@@ -40,15 +46,69 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   void _onSearchTextChanged() {
-    final query = _searchController.text.trim();
-    final provider = context.read<SearchProvider>();
-    
-    if (query.isNotEmpty && query.length >= 2) {
-      provider.searchUsers(query);
-    } else {
-      provider.clearUserSearch();
-    }
+  final query = _searchController.text.trim();
+  final provider = context.read<SearchProvider>();
+
+  if (query.length >= 2) {
+    provider.searchUsers(query).then((_) {
+      setState(() {
+        _suggestions = provider.searchResult.users;
+      });
+      _showSuggestions();
+    });
+  } else {
+    provider.clearUserSearch();
+    _hideSuggestions();
   }
+}
+
+
+void _showSuggestions() {
+  _hideSuggestions();
+  final overlay = Overlay.of(context);
+  _overlayEntry = OverlayEntry(
+    builder: (context) => Positioned(
+      width: MediaQuery.of(context).size.width - 32,
+      child: CompositedTransformFollower(
+        link: _layerLink,
+        showWhenUnlinked: false,
+        offset: const Offset(0, 50),
+        child: Material(
+          elevation: 4.0,
+          borderRadius: BorderRadius.circular(8),
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: _suggestions.length,
+            itemBuilder: (context, index) {
+              final user = _suggestions[index];
+              return ListTile(
+                leading: CircleAvatar(
+                  backgroundImage: user.avatarUrl != null && user.avatarUrl!.isNotEmpty
+                      ? NetworkImage(user.avatarUrl!)
+                      : null,
+                ),
+                title: Text('${user.firstName} ${user.lastName}'),
+                subtitle: Text('@${user.username}'),
+                onTap: () {
+                  _searchController.text = user.username;
+                  _hideSuggestions();
+                  _navigateToUserProfile(user, context.read<SearchProvider>());
+                },
+              );
+            },
+          ),
+        ),
+      ),
+    ),
+  );
+  overlay.insert(_overlayEntry!);
+}
+
+void _hideSuggestions() {
+  _overlayEntry?.remove();
+  _overlayEntry = null;
+}
+
 
   void _onSearchSubmitted(String query) {
     if (query.trim().isEmpty) return;
@@ -116,9 +176,11 @@ class _SearchPageState extends State<SearchPage> {
     );
   }
 
-  Widget _buildSearchSection() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+ Widget _buildSearchSection() {
+  return Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+    child: CompositedTransformTarget(
+      link: _layerLink,
       child: TextField(
         controller: _searchController,
         focusNode: _searchFocusNode,
@@ -150,8 +212,9 @@ class _SearchPageState extends State<SearchPage> {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildSearchResults() {
     return Consumer<SearchProvider>(
@@ -187,39 +250,48 @@ class _SearchPageState extends State<SearchPage> {
     );
   }
 
-  Widget _buildInitialState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.people_outline,
-            size: 80,
-            color: Colors.grey[400],
+ Widget _buildInitialState() {
+  return SingleChildScrollView(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 32),
+        Center(
+          child: Column(
+            children: [
+              Icon(
+                Icons.people_outline,
+                size: 80,
+                color: Colors.grey[400],
+              ),
+              const SizedBox(height: 24),
+              Text(
+                'Rechercher des utilisateurs',
+                style: GoogleFonts.inter(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey[600],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Tapez au moins 2 caractères pour\ncommencer votre recherche',
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  color: Colors.grey[500],
+                  height: 1.5,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
           ),
-          const SizedBox(height: 24),
-          Text(
-            'Rechercher des utilisateurs',
-            style: GoogleFonts.inter(
-              fontSize: 20,
-              fontWeight: FontWeight.w600,
-              color: Colors.grey[600],
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'Tapez au moins 2 caractères pour\ncommencer votre recherche',
-            style: GoogleFonts.inter(
-              fontSize: 14,
-              color: Colors.grey[500],
-              height: 1.5,
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
-    );
-  }
+        ),
+        const SizedBox(height: 24),
+        const RecommendedPostsSection(),
+      ],
+    ),
+  );
+}
 
   Widget _buildNoResultsState() {
     return Center(
