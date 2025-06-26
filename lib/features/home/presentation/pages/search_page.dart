@@ -6,7 +6,8 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/models/search_models.dart';
 import '../../../../core/providers/search_provider.dart';
 import '../widgets/recommended_posts_section.dart';
-
+import '../widgets/tags_filter_widget.dart';
+import '../widgets/search_suggestions_widget.dart';
 
 class SearchPage extends StatefulWidget {
   const SearchPage({super.key});
@@ -15,20 +16,50 @@ class SearchPage extends StatefulWidget {
   State<SearchPage> createState() => _SearchPageState();
 }
 
-class _SearchPageState extends State<SearchPage> {
+class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
-  OverlayEntry? _overlayEntry;
-  final LayerLink _layerLink = LayerLink();
+  
+  // Variables pour gérer l'état des suggestions
+  bool _showSuggestions = false;
   List<UserSearchResult> _suggestions = [];
+  late AnimationController _backgroundAnimationController;
+  late Animation<double> _backgroundAnimation;
 
+  // Variables pour les tags
+  String _selectedTag = 'Tous';
+  final List<String> _tags = [
+    'Tous',
+    'Photography',
+    'Art', 
+    'Music',
+    'Fitness',
+    'Travel',
+    'Food',
+    'Fashion',
+    'Design',
+    'Tech'
+  ];
 
   @override
   void initState() {
     super.initState();
     _searchController.addListener(_onSearchTextChanged);
     _setupScrollListener();
+    
+    // Animation pour l'arrière-plan
+    _backgroundAnimationController = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+    _backgroundAnimation = Tween<double>(
+      begin: 1.0,
+      end: 0.6, // Plus visible que 0.3
+    ).animate(CurvedAnimation(
+      parent: _backgroundAnimationController,
+      curve: Curves.easeInOut,
+    ));
   }
 
   void _setupScrollListener() {
@@ -36,7 +67,6 @@ class _SearchPageState extends State<SearchPage> {
       if (_searchController.text.isNotEmpty && 
           _scrollController.position.pixels >=
           _scrollController.position.maxScrollExtent - 200) {
-        // Charger plus d'utilisateurs si on arrive en bas
         final searchProvider = context.read<SearchProvider>();
         if (!searchProvider.isLoadingMoreSearch) {
           searchProvider.loadMoreUserSearchResults();
@@ -46,90 +76,77 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   void _onSearchTextChanged() {
-  final query = _searchController.text.trim();
-  final provider = context.read<SearchProvider>();
+    final query = _searchController.text.trim();
+    final provider = context.read<SearchProvider>();
 
-  if (query.length >= 2) {
-    provider.searchUsers(query).then((_) {
-      setState(() {
-        _suggestions = provider.searchResult.users;
+    if (query.length >= 2) {
+      // Rechercher et afficher les suggestions en dropdown
+      provider.searchUsers(query).then((_) {
+        setState(() {
+          _suggestions = provider.searchResult.users;
+          _showSuggestions = true; // Toujours afficher la dropdown, même si vide
+        });
+        _backgroundAnimationController.forward();
       });
-      _showSuggestions();
-    });
-  } else {
-    provider.clearUserSearch();
-    _hideSuggestions();
+    } else {
+      // Masquer les suggestions et nettoyer
+      _hideSuggestions();
+      provider.clearUserSearch();
+    }
   }
-}
 
+  void _onTagSelected(String tag) {
+    setState(() {
+      _selectedTag = tag;
+    });
+    // TODO: Filtrer les posts recommandés par tag
+    debugPrint('Tag sélectionné: $tag');
+  }
 
-void _showSuggestions() {
-  _hideSuggestions();
-  final overlay = Overlay.of(context);
-  _overlayEntry = OverlayEntry(
-    builder: (context) => Positioned(
-      width: MediaQuery.of(context).size.width - 32,
-      child: CompositedTransformFollower(
-        link: _layerLink,
-        showWhenUnlinked: false,
-        offset: const Offset(0, 50),
-        child: Material(
-          elevation: 4.0,
-          borderRadius: BorderRadius.circular(8),
-          child: ListView.builder(
-            shrinkWrap: true,
-            itemCount: _suggestions.length,
-            itemBuilder: (context, index) {
-              final user = _suggestions[index];
-              return ListTile(
-                leading: CircleAvatar(
-                  backgroundImage: user.avatarUrl != null && user.avatarUrl!.isNotEmpty
-                      ? NetworkImage(user.avatarUrl!)
-                      : null,
-                ),
-                title: Text('${user.firstName} ${user.lastName}'),
-                subtitle: Text('@${user.username}'),
-                onTap: () {
-                  _searchController.text = user.username;
-                  _hideSuggestions();
-                  _navigateToUserProfile(user, context.read<SearchProvider>());
-                },
-              );
-            },
-          ),
-        ),
-      ),
-    ),
-  );
-  overlay.insert(_overlayEntry!);
-}
+  void _hideSuggestions() {
+    if (_showSuggestions) {
+      _backgroundAnimationController.reverse().then((_) {
+        setState(() {
+          _showSuggestions = false;
+          _suggestions = [];
+        });
+      });
+    }
+  }
 
-void _hideSuggestions() {
-  _overlayEntry?.remove();
-  _overlayEntry = null;
-}
-
+  void _onUserTap(UserSearchResult user) {
+    _searchController.text = '${user.firstName} ${user.lastName}';
+    _hideSuggestions();
+    _searchFocusNode.unfocus();
+    
+    final provider = context.read<SearchProvider>();
+    _navigateToUserProfile(user, provider);
+  }
 
   void _onSearchSubmitted(String query) {
     if (query.trim().isEmpty) return;
     
     _searchFocusNode.unfocus();
-    final provider = context.read<SearchProvider>();
-    provider.searchUsers(query.trim());
+    _hideSuggestions();
+    
+    // Ne pas refaire une recherche, les suggestions ont déjà été chargées
   }
 
   void _clearSearch() {
     _searchController.clear();
     _searchFocusNode.unfocus();
+    _hideSuggestions();
     final provider = context.read<SearchProvider>();
     provider.clearUserSearch();
   }
 
   @override
   void dispose() {
+    _searchController.removeListener(_onSearchTextChanged);
     _searchController.dispose();
     _searchFocusNode.dispose();
     _scrollController.dispose();
+    _backgroundAnimationController.dispose();
     super.dispose();
   }
 
@@ -138,49 +155,61 @@ void _hideSuggestions() {
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
-        child: Column(
+        child: Stack(
           children: [
-            _buildHeader(),
-            _buildSearchSection(),
-            Expanded(child: _buildSearchResults()),
+            // Contenu principal avec animation d'opacité
+            AnimatedBuilder(
+              animation: _backgroundAnimation,
+              builder: (context, child) {
+                return Opacity(
+                  opacity: _backgroundAnimation.value,
+                  child: AbsorbPointer(
+                    absorbing: _showSuggestions,
+                    child: Column(
+                      children: [
+                        _buildSearchSection(),
+                        TagsFilterWidget(
+                          tags: _tags,
+                          selectedTag: _selectedTag,
+                          onTagSelected: _onTagSelected,
+                        ),
+                        Expanded(child: _buildContent()),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+            
+            // Overlay des suggestions
+            if (_showSuggestions) ...[
+              Positioned(
+                top: 80, // Légèrement plus bas pour éviter le chevauchement
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: _suggestions.isNotEmpty
+                    ? SearchSuggestionsWidget(
+                        suggestions: _suggestions,
+                        onUserTap: _onUserTap,
+                        onDismiss: _hideSuggestions,
+                        maxHeight: MediaQuery.of(context).size.height * 0.5, // Un peu moins haut
+                      )
+                    : NoResultsSuggestionWidget(
+                        query: _searchController.text,
+                        onDismiss: _hideSuggestions,
+                      ),
+              ),
+            ],
           ],
         ),
       ),
     );
   }
 
-  Widget _buildHeader() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      child: Row(
-        children: [
-          IconButton(
-            onPressed: () => Navigator.of(context).pop(),
-            icon: const Icon(Icons.arrow_back, color: Colors.black),
-          ),
-          Expanded(
-            child: Center(
-              child: Text(
-                'Rechercher des utilisateurs',
-                style: GoogleFonts.inter(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 48), // Pour équilibrer le bouton retour
-        ],
-      ),
-    );
-  }
-
- Widget _buildSearchSection() {
-  return Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-    child: CompositedTransformTarget(
-      link: _layerLink,
+  Widget _buildSearchSection() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       child: TextField(
         controller: _searchController,
         focusNode: _searchFocusNode,
@@ -212,348 +241,13 @@ void _hideSuggestions() {
           ),
         ),
       ),
-    ),
-  );
-}
-
-  Widget _buildSearchResults() {
-    return Consumer<SearchProvider>(
-      builder: (context, provider, child) {
-        // État de chargement initial
-        if (provider.searchState == SearchState.loading && provider.searchResult.users.isEmpty) {
-          return const Center(
-            child: CircularProgressIndicator(color: Colors.black),
-          );
-        }
-
-        // Aucune recherche effectuée
-        if (_searchController.text.isEmpty || _searchController.text.length < 2) {
-          return _buildInitialState();
-        }
-
-        // État d'erreur
-        if (provider.searchState == SearchState.error) {
-          return _buildErrorState(
-            provider.searchError ?? 'Erreur de recherche',
-            () => provider.searchUsers(_searchController.text),
-          );
-        }
-
-        // Aucun résultat trouvé
-        if (provider.searchResult.users.isEmpty && provider.searchState != SearchState.loading) {
-          return _buildNoResultsState();
-        }
-
-        // Afficher les utilisateurs trouvés
-        return _buildUsersList(provider);
-      },
     );
   }
 
- Widget _buildInitialState() {
-  return SingleChildScrollView(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 32),
-        Center(
-          child: Column(
-            children: [
-              Icon(
-                Icons.people_outline,
-                size: 80,
-                color: Colors.grey[400],
-              ),
-              const SizedBox(height: 24),
-              Text(
-                'Rechercher des utilisateurs',
-                style: GoogleFonts.inter(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.grey[600],
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Tapez au moins 2 caractères pour\ncommencer votre recherche',
-                style: GoogleFonts.inter(
-                  fontSize: 14,
-                  color: Colors.grey[500],
-                  height: 1.5,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 24),
-        const RecommendedPostsSection(),
-      ],
-    ),
-  );
-}
-
-  Widget _buildNoResultsState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.person_search,
-            size: 80,
-            color: Colors.grey[400],
-          ),
-          const SizedBox(height: 24),
-          Text(
-            'Aucun utilisateur trouvé',
-            style: GoogleFonts.inter(
-              fontSize: 20,
-              fontWeight: FontWeight.w600,
-              color: Colors.grey[600],
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'Vérifiez l\'orthographe ou\nessayez un autre nom',
-            style: GoogleFonts.inter(
-              fontSize: 14,
-              color: Colors.grey[500],
-              height: 1.5,
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildErrorState(String error, VoidCallback onRetry) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.error_outline,
-            size: 80,
-            color: Colors.red[400],
-          ),
-          const SizedBox(height: 24),
-          Text(
-            'Une erreur s\'est produite',
-            style: GoogleFonts.inter(
-              fontSize: 20,
-              fontWeight: FontWeight.w600,
-              color: Colors.grey[600],
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            error,
-            style: GoogleFonts.inter(
-              fontSize: 14,
-              color: Colors.grey[500],
-              height: 1.5,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 24),
-          ElevatedButton(
-            onPressed: onRetry,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.black,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            child: Text(
-              'Réessayer',
-              style: GoogleFonts.inter(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildUsersList(SearchProvider provider) {
-    return RefreshIndicator(
-      onRefresh: () async {
-        if (_searchController.text.isNotEmpty) {
-          await provider.searchUsers(_searchController.text);
-        }
-      },
-      child: ListView.builder(
-        controller: _scrollController,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        itemCount: provider.searchResult.users.length + 
-                   (provider.isLoadingMoreSearch ? 1 : 0),
-        itemBuilder: (context, index) {
-          // Indicateur de chargement en bas
-          if (index >= provider.searchResult.users.length) {
-            return const Padding(
-              padding: EdgeInsets.all(16),
-              child: Center(
-                child: CircularProgressIndicator(color: Colors.black),
-              ),
-            );
-          }
-
-          final user = provider.searchResult.users[index];
-          return _buildUserCard(user, provider);
-        },
-      ),
-    );
-  }
-
-  Widget _buildUserCard(UserSearchResult user, SearchProvider provider) {
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 6),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey[200]!, width: 1),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: InkWell(
-        onTap: () => _navigateToUserProfile(user, provider),
-        borderRadius: BorderRadius.circular(16),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              // Avatar utilisateur
-              Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.grey[200]!, width: 2),
-                ),
-                child: CircleAvatar(
-                  radius: 26,
-                  backgroundImage: user.avatarUrl != null && user.avatarUrl!.isNotEmpty
-                      ? NetworkImage(user.avatarUrl!)
-                      : null,
-                  backgroundColor: Colors.grey[100],
-                  child: user.avatarUrl == null || user.avatarUrl!.isEmpty
-                      ? Text(
-                          user.firstName.isNotEmpty ? user.firstName[0].toUpperCase() : '?',
-                          style: GoogleFonts.inter(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.grey[600],
-                          ),
-                        )
-                      : null,
-                ),
-              ),
-              
-              const SizedBox(width: 16),
-              
-              // Informations utilisateur
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Nom complet avec badge créateur
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            '${user.firstName} ${user.lastName}',
-                            style: GoogleFonts.inter(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.black,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        if (user.isCreator) ...[
-                          const SizedBox(width: 6),
-                          Icon(
-                            Icons.verified,
-                            size: 16,
-                            color: Colors.blue[600],
-                          ),
-                        ],
-                      ],
-                    ),
-                    
-                    const SizedBox(height: 4),
-                    
-                    // Username
-                    Text(
-                      '@${user.username}',
-                      style: GoogleFonts.inter(
-                        fontSize: 14,
-                        color: Colors.grey[600],
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    
-                    // Bio si disponible
-                    if (user.bio != null && user.bio!.isNotEmpty) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        user.bio!,
-                        style: GoogleFonts.inter(
-                          fontSize: 13,
-                          color: Colors.grey[700],
-                          height: 1.3,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                    
-                    // Nombre d'abonnés si créateur
-                    if (user.isCreator && user.followersCount > 0) ...[
-                      const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.people,
-                            size: 14,
-                            color: Colors.grey[500],
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            '${user.followersCount} abonné${user.followersCount > 1 ? 's' : ''}',
-                            style: GoogleFonts.inter(
-                              fontSize: 12,
-                              color: Colors.grey[600],
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              
-              // Flèche pour aller au profil
-              Icon(
-                Icons.arrow_forward_ios,
-                size: 16,
-                color: Colors.grey[400],
-              ),
-            ],
-          ),
-        ),
-      ),
+  // Contenu principal : toujours afficher les posts recommandés
+  Widget _buildContent() {
+    return const SingleChildScrollView(
+      child: RecommendedPostsSection(),
     );
   }
 
