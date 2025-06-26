@@ -1,4 +1,4 @@
-// lib/router.dart - Avec protection créateur
+// lib/router.dart - Avec protection créateur + page recherche
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -8,6 +8,7 @@ import 'package:matchmaker/features/home/presentation/pages/create_post_page.dar
 import 'package:matchmaker/features/auth/presentation/pages/login_page.dart';
 import 'package:matchmaker/features/auth/presentation/pages/register_page.dart';
 import 'package:matchmaker/features/auth/auth_provider.dart';
+import 'package:matchmaker/features/home/presentation/pages/search_page.dart';
 
 final GoRouter router = GoRouter(
   initialLocation: '/login',
@@ -63,6 +64,13 @@ final GoRouter router = GoRouter(
       path: '/create-post',
       name: 'createPost',
       builder: (BuildContext context, GoRouterState state) => const CreatePostPage(),
+    ),
+    
+    // Route pour la page de recherche et découverte
+    GoRoute(
+      path: '/search',
+      name: 'search',
+      builder: (BuildContext context, GoRouterState state) => const SearchPage(),
     ),
   ],
 );

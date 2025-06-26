@@ -1,4 +1,4 @@
-// lib/features/search/providers/search_provider.dart
+// lib/core/providers/search_provider.dart
 
 import 'dart:async';
 import 'package:flutter/foundation.dart';
@@ -14,146 +14,85 @@ enum SearchState {
   loadingMore,
 }
 
-/// États pour la découverte
-enum DiscoveryState {
-  initial,
-  loading,
-  loaded,
-  error,
-  refreshing,
-  loadingMore,
-}
-
-/// Provider pour la gestion de l'état de recherche et découverte
+/// Provider simplifié pour la recherche d'utilisateurs uniquement
 class SearchProvider with ChangeNotifier {
   final SearchService _searchService = SearchService();
 
-  // ===== ÉTAT DE LA RECHERCHE =====
+  // ===== ÉTAT DE LA RECHERCHE UTILISATEURS =====
   SearchState _searchState = SearchState.initial;
   SearchResult _searchResult = const SearchResult(posts: [], users: [], total: 0, hasMore: false);
   String? _searchError;
   String _currentQuery = '';
-  List<TagCategory> _selectedTags = [];
-  SortType _currentSort = SortType.relevance;
   
-  // ===== ÉTAT DE LA DÉCOUVERTE =====
-  DiscoveryState _discoveryState = DiscoveryState.initial;
-  List<PostWithDetails> _discoveryPosts = [];
-  String? _discoveryError;
-  List<TagCategory> _discoveryTags = [];
-  SortType _discoverySort = SortType.relevance;
-  bool _hasMoreDiscovery = true;
-
-  // ===== SUGGESTIONS =====
-  List<SearchSuggestion> _suggestions = [];
-  bool _isLoadingSuggestions = false;
-  Timer? _suggestionTimer;
-
-  // ===== TAGS TRENDING =====
-  List<TrendingTag> _trendingTags = [];
-  bool _isLoadingTrending = false;
-
-  // ===== PRÉFÉRENCES =====
-  UserPreferences? _userPreferences;
-
   // ===== PAGINATION =====
   static const int _pageSize = 20;
   int _searchOffset = 0;
-  int _discoveryOffset = 0;
 
-  // ===== GETTERS RECHERCHE =====
+  // ===== GETTERS =====
   SearchState get searchState => _searchState;
   SearchResult get searchResult => _searchResult;
   String? get searchError => _searchError;
   String get currentQuery => _currentQuery;
-  List<TagCategory> get selectedTags => List.unmodifiable(_selectedTags);
-  SortType get currentSort => _currentSort;
-  bool get isSearching => _searchState == SearchState.loading;
+  bool get isLoading => _searchState == SearchState.loading;
   bool get isLoadingMoreSearch => _searchState == SearchState.loadingMore;
-  bool get hasSearchResults => _searchResult.isNotEmpty;
-  bool get hasMoreSearchResults => _searchResult.hasMore;
+  bool get hasSearchResults => _searchResult.users.isNotEmpty;
 
-  // ===== GETTERS DÉCOUVERTE =====
-  DiscoveryState get discoveryState => _discoveryState;
-  List<PostWithDetails> get discoveryPosts => List.unmodifiable(_discoveryPosts);
-  String? get discoveryError => _discoveryError;
-  List<TagCategory> get discoveryTags => List.unmodifiable(_discoveryTags);
-  SortType get discoverySort => _discoverySort;
-  bool get isLoadingDiscovery => _discoveryState == DiscoveryState.loading || _discoveryState == DiscoveryState.refreshing;
-  bool get isLoadingMoreDiscovery => _discoveryState == DiscoveryState.loadingMore;
-  bool get hasDiscoveryPosts => _discoveryPosts.isNotEmpty;
-  bool get hasMoreDiscovery => _hasMoreDiscovery;
+  // ===== RECHERCHE D'UTILISATEURS =====
 
-  // ===== GETTERS SUGGESTIONS =====
-  List<SearchSuggestion> get suggestions => List.unmodifiable(_suggestions);
-  bool get isLoadingSuggestions => _isLoadingSuggestions;
-
-  // ===== GETTERS TRENDING =====
-  List<TrendingTag> get trendingTags => List.unmodifiable(_trendingTags);
-  bool get isLoadingTrending => _isLoadingTrending;
-
-  // ===== GETTERS PRÉFÉRENCES =====
-  UserPreferences? get userPreferences => _userPreferences;
-  List<TagCategory> get preferredTags => _userPreferences?.topTags ?? [];
-
-  // ===== MÉTHODES DE RECHERCHE =====
-
-  /// Lance une nouvelle recherche
-  Future<void> search({
-    required String query,
-    List<TagCategory>? tags,
-    SortType? sortBy,
-    bool resetResults = true,
-  }) async {
-    if (query.trim().isEmpty && (tags?.isEmpty ?? true)) {
-      clearSearch();
+  /// Recherche des utilisateurs par username uniquement
+  Future<void> searchUsers(String query) async {
+    if (query.trim().isEmpty || query.trim().length < 2) {
+      clearUserSearch();
       return;
     }
 
     try {
-      _currentQuery = query.trim();
-      _selectedTags = tags ?? _selectedTags;
-      _currentSort = sortBy ?? _currentSort;
-
-      if (resetResults) {
+      final trimmedQuery = query.trim();
+      
+      // Si c'est une nouvelle recherche, reset
+      if (_currentQuery != trimmedQuery) {
+        _currentQuery = trimmedQuery;
         _searchOffset = 0;
         _searchState = SearchState.loading;
         _searchError = null;
-      } else {
-        _searchState = SearchState.loadingMore;
+        notifyListeners();
+        
+        // Track la recherche
+        _trackUserSearch(trimmedQuery);
+      } else if (_searchState == SearchState.loadingMore) {
+        // Déjà en train de charger plus
+        return;
       }
-      notifyListeners();
 
-      debugPrint('🔍 Searching: query="$_currentQuery", tags=${_selectedTags.length}');
+      debugPrint('🔍 Searching users: query="$_currentQuery"');
 
-      final result = await _searchService.searchAll(
+      final result = await _searchService.searchUsers(
         query: _currentQuery,
-        tags: _selectedTags,
-        sortBy: _currentSort,
         limit: _pageSize,
         offset: _searchOffset,
       );
 
-      if (result.isSuccess) {
-        if (resetResults) {
+      if (result.isSuccess && result.data != null) {
+        if (_searchOffset == 0) {
+          // Nouveaux résultats
           _searchResult = result.data!;
         } else {
           // Ajouter aux résultats existants
           _searchResult = _searchResult.copyWith(
-            posts: [..._searchResult.posts, ...result.data!.posts],
             users: [..._searchResult.users, ...result.data!.users],
             total: result.data!.total,
             hasMore: result.data!.hasMore,
           );
         }
+        
         _searchOffset += _pageSize;
         _searchState = SearchState.loaded;
         _searchError = null;
 
-        debugPrint('✅ Search completed: ${_searchResult.posts.length} posts, ${_searchResult.users.length} users');
+        debugPrint('✅ Search completed: ${_searchResult.users.length} users found');
       } else {
         _searchState = SearchState.error;
-        _searchError = result.error;
+        _searchError = result.error ?? 'Erreur de recherche';
         debugPrint('❌ Search failed: ${result.error}');
       }
     } catch (e, stackTrace) {
@@ -166,391 +105,163 @@ class SearchProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  /// Charge plus de résultats de recherche
-  Future<void> loadMoreSearchResults() async {
-    if (!_searchResult.hasMore || _searchState == SearchState.loadingMore) return;
+  /// Charge plus d'utilisateurs (pagination)
+  Future<void> loadMoreUserSearchResults() async {
+    if (!_searchResult.hasMore || 
+        _searchState == SearchState.loadingMore || 
+        _currentQuery.isEmpty) {
+      return;
+    }
 
-    await search(
-      query: _currentQuery,
-      tags: _selectedTags,
-      sortBy: _currentSort,
-      resetResults: false,
-    );
+    try {
+      _searchState = SearchState.loadingMore;
+      notifyListeners();
+
+      debugPrint('📄 Loading more users: offset=$_searchOffset');
+
+      final result = await _searchService.searchUsers(
+        query: _currentQuery,
+        limit: _pageSize,
+        offset: _searchOffset,
+      );
+
+      if (result.isSuccess && result.data != null) {
+        // Ajouter aux résultats existants
+        _searchResult = _searchResult.copyWith(
+          users: [..._searchResult.users, ...result.data!.users],
+          total: result.data!.total,
+          hasMore: result.data!.hasMore,
+        );
+        
+        _searchOffset += _pageSize;
+        _searchState = SearchState.loaded;
+        _searchError = null;
+
+        debugPrint('✅ More users loaded: ${_searchResult.users.length} total users');
+      } else {
+        _searchState = SearchState.error;
+        _searchError = result.error ?? 'Erreur lors du chargement';
+        debugPrint('❌ Load more failed: ${result.error}');
+      }
+    } catch (e, stackTrace) {
+      _searchState = SearchState.error;
+      _searchError = 'Erreur inattendue lors du chargement';
+      debugPrint('❌ Load more error: $e');
+      debugPrint('Stack trace: $stackTrace');
+    }
+
+    notifyListeners();
   }
 
-  /// Efface les résultats de recherche
-  void clearSearch() {
+  /// Efface la recherche utilisateurs
+  void clearUserSearch() {
     _searchState = SearchState.initial;
     _searchResult = const SearchResult(posts: [], users: [], total: 0, hasMore: false);
     _searchError = null;
     _currentQuery = '';
     _searchOffset = 0;
-    notifyListeners();
-  }
-
-  // ===== MÉTHODES DE DÉCOUVERTE =====
-
-  /// Charge le feed de découverte
-  Future<void> loadDiscoveryFeed({
-    List<TagCategory>? tags,
-    SortType? sortBy,
-    bool refresh = false,
-  }) async {
-    try {
-      _discoveryTags = tags ?? _discoveryTags;
-      _discoverySort = sortBy ?? _discoverySort;
-
-      if (refresh || _discoveryState == DiscoveryState.initial) {
-        _discoveryOffset = 0;
-        _discoveryState = refresh ? DiscoveryState.refreshing : DiscoveryState.loading;
-        _discoveryError = null;
-      } else {
-        _discoveryState = DiscoveryState.loadingMore;
-      }
-      notifyListeners();
-
-      debugPrint('🎯 Loading discovery feed: tags=${_discoveryTags.length}, sort=$_discoverySort');
-
-      final result = await _searchService.getDiscoveryFeed(
-        tags: _discoveryTags,
-        sortBy: _discoverySort,
-        limit: _pageSize,
-        offset: _discoveryOffset,
-      );
-
-      if (result.isSuccess) {
-        if (refresh || _discoveryOffset == 0) {
-          _discoveryPosts = result.posts!;
-        } else {
-          _discoveryPosts.addAll(result.posts!);
-        }
-        
-        _hasMoreDiscovery = result.posts!.length == _pageSize;
-        _discoveryOffset += _pageSize;
-        _discoveryState = DiscoveryState.loaded;
-        _discoveryError = null;
-
-        debugPrint('✅ Discovery feed loaded: ${_discoveryPosts.length} total posts');
-      } else {
-        _discoveryState = DiscoveryState.error;
-        _discoveryError = result.error;
-        debugPrint('❌ Discovery feed failed: ${result.error}');
-      }
-    } catch (e, stackTrace) {
-      _discoveryState = DiscoveryState.error;
-      _discoveryError = 'Erreur inattendue lors du chargement';
-      debugPrint('❌ Discovery feed error: $e');
-      debugPrint('Stack trace: $stackTrace');
-    }
-
-    notifyListeners();
-  }
-
-  /// Rafraîchit le feed de découverte
-  Future<void> refreshDiscoveryFeed() async {
-    await loadDiscoveryFeed(refresh: true);
-  }
-
-  /// Charge plus de posts de découverte
-  Future<void> loadMoreDiscoveryPosts() async {
-    if (!_hasMoreDiscovery || _discoveryState == DiscoveryState.loadingMore) return;
-
-    await loadDiscoveryFeed();
-  }
-
-  // ===== MÉTHODES DES FILTRES =====
-
-  /// Ajoute ou retire un tag des filtres de recherche
-  void toggleSearchTag(TagCategory tag) {
-    if (_selectedTags.contains(tag)) {
-      _selectedTags.remove(tag);
-    } else {
-      _selectedTags.add(tag);
-    }
-    notifyListeners();
-
-    // Relancer la recherche si on a une query
-    if (_currentQuery.isNotEmpty) {
-      search(
-        query: _currentQuery,
-        tags: _selectedTags,
-        sortBy: _currentSort,
-      );
-    }
-
-    // Track l'interaction
-    _searchService.trackTagClick(tag);
-  }
-
-  /// Change le tri de recherche
-  void changeSearchSort(SortType sortType) {
-    if (_currentSort == sortType) return;
-
-    _currentSort = sortType;
-    notifyListeners();
-
-    // Relancer la recherche si on a des résultats
-    if (_currentQuery.isNotEmpty || _selectedTags.isNotEmpty) {
-      search(
-        query: _currentQuery,
-        tags: _selectedTags,
-        sortBy: _currentSort,
-      );
-    }
-  }
-
-  /// Ajoute ou retire un tag des filtres de découverte
-  void toggleDiscoveryTag(TagCategory tag) {
-    if (_discoveryTags.contains(tag)) {
-      _discoveryTags.remove(tag);
-    } else {
-      _discoveryTags.add(tag);
-    }
-    notifyListeners();
-
-    // Relancer la découverte
-    loadDiscoveryFeed(tags: _discoveryTags, sortBy: _discoverySort, refresh: true);
-
-    // Track l'interaction
-    _searchService.trackTagClick(tag);
-  }
-
-  /// Change le tri de découverte
-  void changeDiscoverySort(SortType sortType) {
-    if (_discoverySort == sortType) return;
-
-    _discoverySort = sortType;
-    notifyListeners();
-
-    // Relancer la découverte
-    loadDiscoveryFeed(tags: _discoveryTags, sortBy: _discoverySort, refresh: true);
-  }
-
-  /// Efface tous les filtres de recherche
-  void clearSearchFilters() {
-    _selectedTags.clear();
-    _currentSort = SortType.relevance;
-    notifyListeners();
-
-    // Relancer la recherche si on a une query
-    if (_currentQuery.isNotEmpty) {
-      search(query: _currentQuery);
-    }
-  }
-
-  /// Efface tous les filtres de découverte
-  void clearDiscoveryFilters() {
-    _discoveryTags.clear();
-    _discoverySort = SortType.relevance;
-    notifyListeners();
-
-    // Relancer la découverte
-    loadDiscoveryFeed(refresh: true);
-  }
-
-  // ===== MÉTHODES DES SUGGESTIONS =====
-
-  /// Charge les suggestions pour une query
-  Future<void> loadSuggestions(String query) async {
-    // Annuler le timer précédent
-    _suggestionTimer?.cancel();
-
-    if (query.length < 2) {
-      _suggestions.clear();
-      notifyListeners();
-      return;
-    }
-
-    // Debounce de 300ms
-    _suggestionTimer = Timer(const Duration(milliseconds: 300), () async {
-      await _loadSuggestionsNow(query);
-    });
-  }
-
-  Future<void> _loadSuggestionsNow(String query) async {
-    try {
-      _isLoadingSuggestions = true;
-      notifyListeners();
-
-      debugPrint('💡 Loading suggestions for: "$query"');
-
-      final suggestions = await _searchService.getCachedSuggestions(query);
-      _suggestions = suggestions;
-
-      debugPrint('✅ Suggestions loaded: ${suggestions.length} suggestions');
-    } catch (e, stackTrace) {
-      debugPrint('❌ Suggestions error: $e');
-      debugPrint('Stack trace: $stackTrace');
-      _suggestions.clear();
-    } finally {
-      _isLoadingSuggestions = false;
-      notifyListeners();
-    }
-  }
-
-  /// Efface les suggestions
-  void clearSuggestions() {
-    _suggestions.clear();
-    _suggestionTimer?.cancel();
-    notifyListeners();
-  }
-
-  // ===== MÉTHODES DES TAGS TRENDING =====
-
-  /// Charge les tags en tendance
-  Future<void> loadTrendingTags({String period = 'week'}) async {
-    try {
-      _isLoadingTrending = true;
-      notifyListeners();
-
-      debugPrint('📈 Loading trending tags for period: $period');
-
-      final tags = await _searchService.getTrendingTags(period: period);
-      _trendingTags = tags;
-
-      debugPrint('✅ Trending tags loaded: ${tags.length} tags');
-    } catch (e, stackTrace) {
-      debugPrint('❌ Trending tags error: $e');
-      debugPrint('Stack trace: $stackTrace');
-      _trendingTags.clear();
-    } finally {
-      _isLoadingTrending = false;
-      notifyListeners();
-    }
-  }
-
-  // ===== MÉTHODES DES PRÉFÉRENCES =====
-
-  /// Charge les préférences utilisateur
-  Future<void> loadUserPreferences() async {
-    try {
-      debugPrint('⚙️ Loading user preferences');
-
-      final preferences = await _searchService.getUserPreferences();
-      _userPreferences = preferences;
-
-      debugPrint('✅ User preferences loaded');
-      notifyListeners();
-    } catch (e, stackTrace) {
-      debugPrint('❌ User preferences error: $e');
-      debugPrint('Stack trace: $stackTrace');
-    }
-  }
-
-  // ===== MÉTHODES DE TRACKING =====
-
-  /// Track une vue de post
-  Future<void> trackPostView(PostWithDetails post) async {
-    await _searchService.trackPostView(post.id);
     
-    // Mettre à jour le post dans les résultats si nécessaire
-    _updatePostInResults(post.copyWith(viewsCount: post.viewsCount + 1));
-  }
-
-  /// Track un clic sur profil
-  Future<void> trackProfileView(UserSearchResult user) async {
-    await _searchService.trackProfileView(user.id);
-  }
-
-  /// Met à jour un post dans les résultats
-  void _updatePostInResults(PostWithDetails updatedPost) {
-    // Mettre à jour dans les résultats de recherche
-    final searchIndex = _searchResult.posts.indexWhere((p) => p.id == updatedPost.id);
-    if (searchIndex != -1) {
-      final newPosts = List<PostWithDetails>.from(_searchResult.posts);
-      newPosts[searchIndex] = updatedPost;
-      _searchResult = _searchResult.copyWith(posts: newPosts);
-    }
-
-    // Mettre à jour dans la découverte
-    final discoveryIndex = _discoveryPosts.indexWhere((p) => p.id == updatedPost.id);
-    if (discoveryIndex != -1) {
-      _discoveryPosts[discoveryIndex] = updatedPost;
-    }
-
+    debugPrint('🧹 User search cleared');
     notifyListeners();
   }
 
-  // ===== MÉTHODES D'INTERACTIONS =====
-
-  /// Like/Unlike un post
-  Future<void> togglePostLike(PostWithDetails post) async {
-    final newIsLiked = !post.isLiked;
-    final newLikesCount = newIsLiked ? post.likesCount + 1 : post.likesCount - 1;
-
-    // Mise à jour optimiste
-    final updatedPost = post.copyWith(
-      isLiked: newIsLiked,
-      likesCount: newLikesCount,
-    );
-    _updatePostInResults(updatedPost);
-
-    // Track l'interaction
-    if (newIsLiked) {
-      await _searchService.trackInteraction(
-        interactionType: InteractionType.like,
-        contentType: 'post',
-        contentId: post.id,
-      );
-    }
-  }
-
-  /// Applique des filtres rapides basés sur les préférences
-  void applyPreferredFilters() {
-    if (_userPreferences == null) return;
-
-    final topTags = _userPreferences!.topTags.take(3).toList();
-    _selectedTags = topTags;
-    _currentSort = SortType.relevance;
-    notifyListeners();
-
-    // Lancer une recherche si on a une query
+  /// Force le rafraîchissement de la recherche actuelle
+  Future<void> refreshCurrentSearch() async {
     if (_currentQuery.isNotEmpty) {
-      search(
-        query: _currentQuery,
-        tags: _selectedTags,
-        sortBy: _currentSort,
-      );
+      _searchOffset = 0;
+      await searchUsers(_currentQuery);
     }
   }
 
-  // ===== MÉTHODES DE RESET =====
+  // ===== TRACKING DES INTERACTIONS =====
+
+  /// Track la visualisation d'un profil utilisateur
+  Future<void> trackProfileView(UserSearchResult user) async {
+    try {
+      await _searchService.trackProfileView(user.id);
+      
+      debugPrint('📊 Profile view tracked: ${user.username}');
+    } catch (e) {
+      debugPrint('❌ Failed to track profile view: $e');
+    }
+  }
+
+  /// Track une recherche utilisateur (privée)
+  Future<void> _trackUserSearch(String query) async {
+    try {
+      await _searchService.trackSearch(query);
+      
+      debugPrint('📊 User search tracked: "$query"');
+    } catch (e) {
+      debugPrint('❌ Failed to track user search: $e');
+    }
+  }
+
+  // ===== MÉTHODES UTILITAIRES =====
+
+  /// Vérifie si on peut charger plus de résultats
+  bool get canLoadMore => _searchResult.hasMore && 
+                         _searchState != SearchState.loadingMore && 
+                         _currentQuery.isNotEmpty;
+
+  /// Nombre total d'utilisateurs trouvés
+  int get totalUsersFound => _searchResult.total;
+
+  /// Liste des utilisateurs trouvés
+  List<UserSearchResult> get searchedUsers => _searchResult.users;
+
+  /// Indique si une recherche est en cours
+  bool get isSearching => _searchState == SearchState.loading;
+
+  /// Indique si des résultats sont disponibles
+  bool get hasResults => _searchResult.users.isNotEmpty;
+
+  /// Message d'erreur formaté pour l'utilisateur
+  String? get userFriendlyError {
+    if (_searchError == null) return null;
+    
+    // Transformer les erreurs techniques en messages utilisateur
+    if (_searchError!.contains('network') || _searchError!.contains('connection')) {
+      return 'Problème de connexion. Vérifiez votre réseau.';
+    } else if (_searchError!.contains('timeout')) {
+      return 'La recherche prend trop de temps. Réessayez.';
+    } else if (_searchError!.contains('server')) {
+      return 'Problème serveur temporaire. Réessayez dans quelques instants.';
+    }
+    
+    return _searchError;
+  }
+
+  // ===== MÉTHODES DE DEBUG =====
+
+  /// Affiche les statistiques de recherche
+  void logSearchStats() {
+    debugPrint('=== SEARCH STATS ===');
+    debugPrint('State: $_searchState');
+    debugPrint('Query: "$_currentQuery"');
+    debugPrint('Users found: ${_searchResult.users.length}');
+    debugPrint('Total: ${_searchResult.total}');
+    debugPrint('Has more: ${_searchResult.hasMore}');
+    debugPrint('Offset: $_searchOffset');
+    debugPrint('Error: $_searchError');
+    debugPrint('==================');
+  }
+
+  // ===== RESET ET DISPOSE =====
 
   /// Reset complet du provider
   void reset() {
-    clearSearch();
-    _discoveryState = DiscoveryState.initial;
-    _discoveryPosts.clear();
-    _discoveryError = null;
-    _discoveryTags.clear();
-    _discoverySort = SortType.relevance;
-    _hasMoreDiscovery = true;
-    _discoveryOffset = 0;
-    
-    clearSuggestions();
-    _trendingTags.clear();
-    _userPreferences = null;
-
-    notifyListeners();
+    clearUserSearch();
+    debugPrint('🔄 SearchProvider reset');
   }
 
-  /// Initialise le provider (à appeler après connexion)
+  /// Initialise le provider (optionnel pour cette version simplifiée)
   Future<void> initialize() async {
-    debugPrint('🚀 Initializing SearchProvider');
-    
-    // Charger les données initiales en parallèle
-    await Future.wait([
-      loadUserPreferences(),
-      loadTrendingTags(),
-      loadDiscoveryFeed(),
-    ]);
-
-    debugPrint('✅ SearchProvider initialized');
+    debugPrint('🚀 SearchProvider initialized (simplified version)');
   }
 
   @override
   void dispose() {
-    _suggestionTimer?.cancel();
     _searchService.clearCache();
     super.dispose();
   }
