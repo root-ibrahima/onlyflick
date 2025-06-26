@@ -11,7 +11,10 @@ class Post {
   final String description;
   final String mediaUrl;
   final String? fileId;
+  final String? imageUrl;
+  final String? videoUrl;
   final String visibility;
+  final double? popularityScore;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -22,6 +25,9 @@ class Post {
     required this.description,
     required this.mediaUrl,
     this.fileId,
+    this.imageUrl,
+    this.videoUrl,
+    this.popularityScore,
     required this.visibility,
     required this.createdAt,
     required this.updatedAt,
@@ -35,11 +41,17 @@ class Post {
       description: json['description'] ?? '',
       mediaUrl: json['media_url'] ?? '',
       fileId: json['file_id'],
+      imageUrl: json['image_url'],
+      videoUrl: json['video_url'],
+      popularityScore: (json['popularity_score'] as num?)?.toDouble(),
       visibility: json['visibility'] ?? 'public',
       createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
       updatedAt: DateTime.tryParse(json['updated_at'] ?? '') ?? DateTime.now(),
     );
   }
+
+  bool get isSubscriberOnly => visibility == 'subscriber';
+  bool get isPublic => visibility == 'public';
 
   Map<String, dynamic> toJson() {
     return {
@@ -49,11 +61,15 @@ class Post {
       'description': description,
       'media_url': mediaUrl,
       'file_id': fileId,
+      'image_url': imageUrl,
+      'video_url': videoUrl,
+      'popularity_score': popularityScore,
       'visibility': visibility,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
     };
   }
+
 
   Post copyWith({
     int? id,
