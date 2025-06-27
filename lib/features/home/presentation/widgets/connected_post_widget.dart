@@ -3,10 +3,10 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/providers/posts_providers.dart';
 import '../../../../../core/services/posts_service.dart';
-import '../../../../core/models/post_models.dart';
+import '../../../../core/models/post_models.dart' as models; // ===== ALIAS POUR ÉVITER CONFLITS =====
 
 class ConnectedPostWidget extends StatefulWidget {
-  final Post post;
+  final models.Post post; // ===== UTILISATION DE L'ALIAS =====
   final VoidCallback onLike;
   final Function(String) onComment;
   final Function(String) onError;
@@ -161,10 +161,10 @@ class _ConnectedPostWidgetState extends State<ConnectedPostWidget>
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
         children: [
-          // Avatar simple
+          // ===== AVATAR AVEC VRAIE URL =====
           CircleAvatar(
             backgroundImage: NetworkImage(
-              'https://i.pravatar.cc/150?img=${widget.post.userId % 20}',
+              widget.post.authorAvatarFallback, // ===== UTILISATION DU VRAI AVATAR =====
             ),
             radius: 18,
           ),
@@ -178,19 +178,39 @@ class _ConnectedPostWidgetState extends State<ConnectedPostWidget>
                 Row(
                   children: [
                     Text(
-                      'user${widget.post.userId}',
+                      widget.post.authorDisplayName, // ===== UTILISATION DU VRAI USERNAME =====
                       style: const TextStyle(
                         fontWeight: FontWeight.w600,
                         fontSize: 15,
                         color: Colors.black,
                       ),
                     ),
-                    if (widget.post.isSubscriberOnly) ...[
+                    // ===== BADGE CRÉATEUR =====
+                    if (widget.post.isFromCreator) ...[
                       const SizedBox(width: 6),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
                           color: Colors.purple,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Text(
+                          'Créateur',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                    // ===== BADGE PREMIUM =====
+                    if (widget.post.isSubscriberOnly) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.orange,
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: const Text(
@@ -392,7 +412,7 @@ class _ConnectedPostWidgetState extends State<ConnectedPostWidget>
               text: TextSpan(
                 children: [
                   TextSpan(
-                    text: 'user${widget.post.userId} ',
+                    text: '${widget.post.authorDisplayName} ', // ===== VRAI USERNAME =====
                     style: const TextStyle(
                       fontWeight: FontWeight.w600,
                       color: Colors.black,
@@ -430,7 +450,7 @@ class _ConnectedPostWidgetState extends State<ConnectedPostWidget>
   }
 
   Widget _buildCleanCommentsSection(PostsProvider postsProvider) {
-    return FutureBuilder<List<Comment>>(
+    return FutureBuilder<List<models.Comment>>( // ===== UTILISATION DE L'ALIAS =====
       future: postsProvider.getComments(widget.post.id),
       builder: (context, snapshot) {
         final comments = snapshot.data ?? [];
@@ -470,14 +490,14 @@ class _ConnectedPostWidgetState extends State<ConnectedPostWidget>
     );
   }
 
-  Widget _buildCompactComment(Comment comment) {
+  Widget _buildCompactComment(models.Comment comment) { // ===== UTILISATION DE L'ALIAS =====
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: RichText(
         text: TextSpan(
           children: [
             TextSpan(
-              text: 'user${comment.userId} ',
+              text: '${comment.authorDisplayName} ', // ===== VRAI USERNAME DU COMMENTAIRE =====
               style: const TextStyle(
                 fontWeight: FontWeight.w600,
                 color: Colors.black,
@@ -503,7 +523,7 @@ class _ConnectedPostWidgetState extends State<ConnectedPostWidget>
       child: Row(
         children: [
           CircleAvatar(
-            backgroundImage: const NetworkImage('https://i.pravatar.cc/150?img=1'),
+            backgroundImage: NetworkImage(widget.post.authorAvatarFallback),
             radius: 14,
           ),
           const SizedBox(width: 12),
@@ -579,7 +599,7 @@ class _ConnectedPostWidgetState extends State<ConnectedPostWidget>
     );
   }
 
-  void _showCommentsModal(BuildContext context, List<Comment> comments) {
+  void _showCommentsModal(BuildContext context, List<models.Comment> comments) { // ===== UTILISATION DE L'ALIAS =====
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -651,7 +671,7 @@ class _ConnectedPostWidgetState extends State<ConnectedPostWidget>
     );
   }
 
-  Widget _buildModalCommentItem(Comment comment) {
+  Widget _buildModalCommentItem(models.Comment comment) { // ===== UTILISATION DE L'ALIAS =====
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Row(
@@ -659,7 +679,7 @@ class _ConnectedPostWidgetState extends State<ConnectedPostWidget>
         children: [
           CircleAvatar(
             backgroundImage: NetworkImage(
-              'https://i.pravatar.cc/150?img=${comment.userId % 20}',
+              comment.authorAvatarFallback, // ===== VRAI AVATAR DU COMMENTAIRE =====
             ),
             radius: 16,
           ),
@@ -672,7 +692,7 @@ class _ConnectedPostWidgetState extends State<ConnectedPostWidget>
                   text: TextSpan(
                     children: [
                       TextSpan(
-                        text: 'user${comment.userId} ',
+                        text: '${comment.authorDisplayName} ', // ===== VRAI USERNAME DU COMMENTAIRE =====
                         style: const TextStyle(
                           fontWeight: FontWeight.w600,
                           color: Colors.black,
@@ -691,7 +711,7 @@ class _ConnectedPostWidgetState extends State<ConnectedPostWidget>
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  _getTimeAgo(comment.createdAt),
+                  comment.timeAgo, // ===== UTILISATION DE LA MÉTHODE DU MODÈLE =====
                   style: TextStyle(
                     color: Colors.grey[600],
                     fontSize: 12,

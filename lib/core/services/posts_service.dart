@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 import '../../../core/services/api_service.dart';
-import '../models/post_models.dart';
+import '../models/post_models.dart'; // ===== IMPORT UNIQUE DEPUIS POST_MODELS =====
 
 /// Service pour la gestion des posts
 class PostsService {
@@ -14,11 +14,25 @@ class PostsService {
       final response = await _apiService.get<dynamic>('/posts/all');
 
       if (response.isSuccess && response.data != null) {
+        // ===== DEBUG : AFFICHER LA STRUCTURE JSON BRUTE =====
+        debugPrint('🔍 RAW JSON RESPONSE:');
+        if (response.data is List && (response.data as List).isNotEmpty) {
+          final firstPost = (response.data as List).first;
+          debugPrint('🔍 Premier post JSON: $firstPost');
+          debugPrint('🔍 Clés disponibles: ${firstPost.keys.toList()}');
+        }
+        
         final posts = (response.data as List)
             .map((json) => Post.fromJson(json))
             .toList();
         
         debugPrint('📱 ${posts.length} posts fetched successfully');
+        
+        // ===== DEBUG DES USERNAMES =====
+        for (final post in posts) {
+          debugPrint('📊 Post ${post.id}: ${post.initialLikesCount} likes, author: ${post.authorDisplayName} (username: ${post.authorUsername})');
+        }
+        
         return PostsResult.success(posts);
       } else {
         debugPrint('❌ Failed to fetch posts: ${response.error}');
@@ -62,7 +76,7 @@ class PostsService {
   }
 
   /// Like/Unlike un post
-  Future<LikeResult> toggleLike(int postId) async {
+  Future<LikeToggleResult> toggleLike(int postId) async {
     try {
       debugPrint('❤️ Toggling like for post: $postId');
       
@@ -74,14 +88,14 @@ class PostsService {
       if (response.isSuccess && response.data != null) {
         final liked = response.data!['liked'] ?? false;
         debugPrint('❤️ Post $postId like toggled: $liked');
-        return LikeResult.success(liked);
+        return LikeToggleResult.success(liked);
       } else {
         debugPrint('❌ Failed to toggle like: ${response.error}');
-        return LikeResult.failure(response.error ?? 'Erreur lors du like');
+        return LikeToggleResult.failure(response.error ?? 'Erreur lors du like');
       }
     } catch (e) {
       debugPrint('❌ Like toggle error: $e');
-      return LikeResult.failure('Erreur lors du like');
+      return LikeToggleResult.failure('Erreur lors du like');
     }
   }
 
@@ -122,6 +136,12 @@ class PostsService {
             .toList();
         
         debugPrint('💬 ${comments.length} comments fetched for post $postId');
+        
+        // ===== DEBUG DES USERNAMES DES COMMENTAIRES =====
+        for (final comment in comments) {
+          debugPrint('💬 Comment ${comment.id}: by ${comment.authorDisplayName} (username: ${comment.authorUsername})');
+        }
+        
         return CommentsResult.success(comments);
       } else {
         debugPrint('❌ Failed to fetch comments: ${response.error}');
@@ -149,7 +169,7 @@ class PostsService {
 
       if (response.isSuccess && response.data != null) {
         final comment = Comment.fromJson(response.data!);
-        debugPrint('💬 Comment added successfully to post $postId');
+        debugPrint('💬 Comment added successfully to post $postId by ${comment.authorDisplayName}');
         return CommentResult.success(comment);
       } else {
         debugPrint('❌ Failed to add comment: ${response.error}');
@@ -185,173 +205,27 @@ class PostsService {
     }
   }
 
-/// Récupère les posts recommandés pour l'utilisateur connecté
-Future<PostsResult> getRecommendedPosts() async {
-  try {
-    debugPrint('🤖 Fetching recommended posts for user');
+  /// Récupère les posts recommandés pour l'utilisateur connecté
+  Future<PostsResult> getRecommendedPosts() async {
+    try {
+      debugPrint('🤖 Fetching recommended posts for user');
 
-    final response = await _apiService.get<dynamic>('/posts/recommended');
+      final response = await _apiService.get<dynamic>('/posts/recommended');
 
-    if (response.isSuccess && response.data != null) {
-      final posts = (response.data as List)
-          .map((json) => Post.fromJson(json))
-          .toList();
+      if (response.isSuccess && response.data != null) {
+        final posts = (response.data as List)
+            .map((json) => Post.fromJson(json))
+            .toList();
 
-      debugPrint('🤖 ${posts.length} recommended posts fetched successfully');
-      return PostsResult.success(posts);
-    } else {
-      debugPrint('❌ Failed to fetch recommended posts: ${response.error}');
-      return PostsResult.failure(response.error ?? 'Erreur de récupération des posts recommandés');
+        debugPrint('🤖 ${posts.length} recommended posts fetched successfully');
+        return PostsResult.success(posts);
+      } else {
+        debugPrint('❌ Failed to fetch recommended posts: ${response.error}');
+        return PostsResult.failure(response.error ?? 'Erreur de récupération des posts recommandés');
+      }
+    } catch (e) {
+      debugPrint('❌ Recommended posts fetch error: $e');
+      return PostsResult.failure('Erreur lors de la récupération des posts recommandés');
     }
-  } catch (e) {
-    debugPrint('❌ Recommended posts fetch error: $e');
-    return PostsResult.failure('Erreur lors de la récupération des posts recommandés');
   }
-}
-
-
-}
-
-class Comment {
-  final int id;
-  final int userId;
-  final int postId;
-  final String content;
-  final DateTime createdAt;
-  final DateTime updatedAt;
-
-  const Comment({
-    required this.id,
-    required this.userId,
-    required this.postId,
-    required this.content,
-    required this.createdAt,
-    required this.updatedAt,
-  });
-
-  factory Comment.fromJson(Map<String, dynamic> json) {
-    return Comment(
-      id: json['id'] ?? 0,
-      userId: json['user_id'] ?? 0,
-      postId: json['post_id'] ?? 0,
-      content: json['content'] ?? '',
-      createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
-      updatedAt: DateTime.tryParse(json['updated_at'] ?? '') ?? DateTime.now(),
-    );
-  }
-
-  @override
-  String toString() => 'Comment(id: $id, content: $content)';
-}
-
-/// Classes de résultats pour les différentes opérations
-
-class PostsResult {
-  final bool isSuccess;
-  final List<Post>? data;
-  final String? error;
-
-  const PostsResult._({
-    required this.isSuccess,
-    this.data,
-    this.error,
-  });
-
-  factory PostsResult.success(List<Post> data) {
-    return PostsResult._(isSuccess: true, data: data);
-  }
-
-  factory PostsResult.failure(String error) {
-    return PostsResult._(isSuccess: false, error: error);
-  }
-
-  bool get isFailure => !isSuccess;
-}
-
-class LikeResult {
-  final bool isSuccess;
-  final bool? data;
-  final String? error;
-
-  const LikeResult._({
-    required this.isSuccess,
-    this.data,
-    this.error,
-  });
-
-  factory LikeResult.success(bool liked) {
-    return LikeResult._(isSuccess: true, data: liked);
-  }
-
-  factory LikeResult.failure(String error) {
-    return LikeResult._(isSuccess: false, error: error);
-  }
-
-  bool get isFailure => !isSuccess;
-}
-
-class LikesCountResult {
-  final bool isSuccess;
-  final int? data;
-  final String? error;
-
-  const LikesCountResult._({
-    required this.isSuccess,
-    this.data,
-    this.error,
-  });
-
-  factory LikesCountResult.success(int count) {
-    return LikesCountResult._(isSuccess: true, data: count);
-  }
-
-  factory LikesCountResult.failure(String error) {
-    return LikesCountResult._(isSuccess: false, error: error);
-  }
-
-  bool get isFailure => !isSuccess;
-}
-
-class CommentsResult {
-  final bool isSuccess;
-  final List<Comment>? data;
-  final String? error;
-
-  const CommentsResult._({
-    required this.isSuccess,
-    this.data,
-    this.error,
-  });
-
-  factory CommentsResult.success(List<Comment> data) {
-    return CommentsResult._(isSuccess: true, data: data);
-  }
-
-  factory CommentsResult.failure(String error) {
-    return CommentsResult._(isSuccess: false, error: error);
-  }
-
-  bool get isFailure => !isSuccess;
-}
-
-class CommentResult {
-  final bool isSuccess;
-  final Comment? data;
-  final String? error;
-
-  const CommentResult._({
-    required this.isSuccess,
-    this.data,
-    this.error,
-  });
-
-  factory CommentResult.success(Comment data) {
-    return CommentResult._(isSuccess: true, data: data);
-  }
-
-  factory CommentResult.failure(String error) {
-    return CommentResult._(isSuccess: false, error: error);
-  }
-
-  bool get isFailure => !isSuccess;
 }
