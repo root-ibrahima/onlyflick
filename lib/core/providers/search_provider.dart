@@ -36,6 +36,11 @@ class SearchProvider with ChangeNotifier {
   bool get isLoading => _searchState == SearchState.loading;
   bool get isLoadingMoreSearch => _searchState == SearchState.loadingMore;
   bool get hasSearchResults => _searchResult.users.isNotEmpty;
+  bool _isSearchingPosts = false;
+  List<PostWithDetails> _searchedPosts = [];
+  bool get isSearchingPosts => _isSearchingPosts;
+  List<PostWithDetails> get searchedPosts => _searchedPosts;
+
 
   // ===== RECHERCHE D'UTILISATEURS =====
 
@@ -172,6 +177,44 @@ class SearchProvider with ChangeNotifier {
       await searchUsers(_currentQuery);
     }
   }
+
+  Future<void> searchPosts({List<String>? tags}) async {
+  _isSearchingPosts = true;
+  _searchedPosts = [];
+  notifyListeners();
+
+  try {
+    final result = await _searchService.searchPosts(
+      tags: tags ?? [],
+      query: '',
+      limit: 20,
+      offset: 0,
+    );
+
+    if (result.isSuccess && result.data != null) {
+      final data = result.data!;
+      final posts = (data['posts'] as List)
+          .map((e) => PostWithDetails.fromJson(e))
+          .toList();
+      _searchedPosts = posts;
+    } else {
+      debugPrint('❌ Échec recherche posts: ${result.error}');
+    }
+  } catch (e, stackTrace) {
+    debugPrint('❌ Exception recherche posts: $e');
+    debugPrint('Stack: $stackTrace');
+  } finally {
+    _isSearchingPosts = false;
+    notifyListeners();
+  }
+}
+
+void clearPostSearch() {
+  _searchedPosts = [];
+  _isSearchingPosts = false;
+  notifyListeners();
+}
+
 
   // ===== TRACKING DES INTERACTIONS =====
 

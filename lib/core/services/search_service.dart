@@ -117,6 +117,38 @@ class SearchService {
     );
   }
 
+  /// Recherche des posts (avec tags et/ou query)
+Future<ApiResponse<Map<String, dynamic>>> searchPosts({
+  List<String>? tags,
+  String? query,
+  int limit = 20,
+  int offset = 0,
+  String sortBy = 'recent',
+}) async {
+  final queryParams = <String, String>{
+    'limit': limit.toString(),
+    'offset': offset.toString(),
+    'sort_by': sortBy,
+    'search_type': 'posts',
+  };
+
+  if (query != null && query.isNotEmpty) {
+    queryParams['q'] = query;
+  }
+
+  if (tags != null && tags.isNotEmpty) {
+    queryParams['tags'] = tags.join(',');
+  }
+
+  debugPrint('🔍 Recherche de posts: $queryParams');
+
+  return _apiService.get<Map<String, dynamic>>(
+    '/search/posts',
+    queryParams: queryParams,
+  );
+}
+
+
   /// Track une recherche
   Future<void> trackSearch(String query) async {
     await trackInteraction(

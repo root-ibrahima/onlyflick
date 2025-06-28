@@ -95,13 +95,19 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
     }
   }
 
-  void _onTagSelected(String tag) {
-    setState(() {
-      _selectedTag = tag;
-    });
-    // TODO: Filtrer les posts recommandés par tag
-    debugPrint('Tag sélectionné: $tag');
-  }
+  void _onTagSelected(String tag) async {
+  setState(() {
+    _selectedTag = tag;
+  });
+
+  final provider = context.read<SearchProvider>();
+  final selectedTagParam = tag.toLowerCase() == 'tous' ? null : tag.toLowerCase();
+
+  await provider.searchPosts(
+    tags: selectedTagParam != null ? [selectedTagParam] : [],
+  );
+}
+
 
   void _hideSuggestions() {
     if (_showSuggestions) {

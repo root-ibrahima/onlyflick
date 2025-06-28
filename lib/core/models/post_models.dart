@@ -15,6 +15,7 @@ class Post {
   final String? videoUrl;
   final String visibility;
   final double? popularityScore;
+  final List<String> tags; 
   final DateTime createdAt;
   final DateTime updatedAt;
   
@@ -40,6 +41,7 @@ class Post {
     this.imageUrl,
     this.videoUrl,
     this.popularityScore,
+    this.tags = const [],
     required this.visibility,
     required this.createdAt,
     required this.updatedAt,
@@ -65,6 +67,7 @@ class Post {
       imageUrl: json['image_url'],
       videoUrl: json['video_url'],
       popularityScore: (json['popularity_score'] as num?)?.toDouble(),
+      tags: (json['tags'] as List<dynamic>? ?? []).map((e) => e.toString()).toList(),
       visibility: json['visibility'] ?? 'public',
       createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
       updatedAt: DateTime.tryParse(json['updated_at'] ?? '') ?? DateTime.now(),
@@ -131,6 +134,7 @@ class Post {
       'image_url': imageUrl,
       'video_url': videoUrl,
       'popularity_score': popularityScore,
+      'tags': tags,
       'visibility': visibility,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
@@ -162,6 +166,8 @@ class Post {
     double? popularityScore,
     DateTime? createdAt,
     DateTime? updatedAt,
+    List<String>? tags,
+
     String? authorUsername,
     String? authorFirstName,
     String? authorLastName,
@@ -182,6 +188,7 @@ class Post {
       videoUrl: videoUrl ?? this.videoUrl,
       visibility: visibility ?? this.visibility,
       popularityScore: popularityScore ?? this.popularityScore,
+      tags: tags ?? this.tags,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       authorUsername: authorUsername ?? this.authorUsername,
@@ -267,6 +274,7 @@ class Comment {
     'author_first_name': authorFirstName,
     'author_last_name': authorLastName,
     'author_avatar_url': authorAvatarUrl,
+    
   };
 
   /// Nom d'affichage de l'auteur

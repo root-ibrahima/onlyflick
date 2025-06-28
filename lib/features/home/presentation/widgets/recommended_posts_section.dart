@@ -5,7 +5,13 @@ import '../../../../core/models/post_models.dart';
 import '../../../../core/services/posts_service.dart';
 
 class RecommendedPostsSection extends StatefulWidget {
-  const RecommendedPostsSection({super.key});
+  final String selectedTag; 
+
+
+const RecommendedPostsSection({
+    super.key,
+    this.selectedTag = 'Tous',
+  });
 
   @override
   State<RecommendedPostsSection> createState() => _RecommendedPostsSectionState();
@@ -14,11 +20,15 @@ class RecommendedPostsSection extends StatefulWidget {
 class _RecommendedPostsSectionState extends State<RecommendedPostsSection> {
   final PostsService _postsService = PostsService();
   late Future<PostsResult> _recommendedPostsFuture;
+  List<Post> _allPosts = []; // Tous les posts initiaux
 
-  @override
+   @override
   void initState() {
     super.initState();
-    _recommendedPostsFuture = _postsService.getRecommendedPosts();
+    _recommendedPostsFuture = _postsService.getRecommendedPosts().then((result) {
+      _allPosts = result.data ?? [];
+      return result;
+    });
   }
 
   @override
@@ -37,9 +47,7 @@ class _RecommendedPostsSectionState extends State<RecommendedPostsSection> {
               return const Padding(
                 padding: EdgeInsets.all(32),
                 child: Center(
-                  child: CircularProgressIndicator(
-                    color: Colors.black,
-                  ),
+                  child: CircularProgressIndicator(color: Colors.black),
                 ),
               );
             }
@@ -59,25 +67,34 @@ class _RecommendedPostsSectionState extends State<RecommendedPostsSection> {
               );
             }
 
-            final posts = snapshot.data!.data!;
-            if (posts.isEmpty) {
-              return Padding(
-                padding: const EdgeInsets.all(16),
-                child: Center(
-                  child: Text(
-                    "Aucune recommandation pour l'instant.",
-                    style: GoogleFonts.inter(
-                      color: Colors.grey[600],
-                      fontSize: 14,
-                    ),
+            final allPosts = snapshot.data!.data!;
+          final selectedTag = widget.selectedTag.toLowerCase();
+
+          final filteredPosts = selectedTag == 'tous'
+              ? allPosts
+              : allPosts.where((post) =>
+                  post.tags.any((tag) => tag.toLowerCase() == selectedTag)).toList();
+
+          if (filteredPosts.isEmpty) {
+            return Padding(
+              padding: const EdgeInsets.all(16),
+              child: Center(
+                child: Text(
+                  "Aucune publication pour ce tag.",
+                  style: GoogleFonts.inter(
+                    color: Colors.grey[600],
+                    fontSize: 14,
                   ),
                 ),
-              );
-            }
+              ),
+            );
+          }
 
-            return _buildMasonryGrid(posts);
+          return _buildMasonryGrid(filteredPosts);
+
           },
         ),
+
       ],
     );
   }

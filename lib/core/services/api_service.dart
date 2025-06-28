@@ -359,6 +359,29 @@ class ApiService {
     setToken(null);
   }
 
+  Future<ApiResponse<Map<String, dynamic>>> searchPosts({
+    String? query,
+    List<String>? tags,
+    String sortBy = 'recent',
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    final params = {
+      if (query != null && query.isNotEmpty) 'q': query,
+      if (tags != null && tags.isNotEmpty) 'tags': tags.join(','),
+      'sort_by': sortBy,
+      'limit': '$limit',
+      'offset': '$offset',
+    };
+
+    return get<Map<String, dynamic>>(
+      '/search/posts',
+      queryParams: params,
+      fromJson: (json) => json,
+    );
+  }
+
+
   /// Test de connectivité avec le serveur
   Future<bool> testConnection() async {
     try {
