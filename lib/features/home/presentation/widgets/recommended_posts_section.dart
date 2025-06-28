@@ -2,13 +2,12 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/models/post_models.dart';
-import '../../../../core/services/posts_service.dart';
+import '../../../../core/services/tags_service.dart';
 
 class RecommendedPostsSection extends StatefulWidget {
-  final String selectedTag; 
+  final String selectedTag;
 
-
-const RecommendedPostsSection({
+  const RecommendedPostsSection({
     super.key,
     this.selectedTag = 'Tous',
   });
@@ -18,17 +17,101 @@ const RecommendedPostsSection({
 }
 
 class _RecommendedPostsSectionState extends State<RecommendedPostsSection> {
-  final PostsService _postsService = PostsService();
-  late Future<PostsResult> _recommendedPostsFuture;
-  List<Post> _allPosts = []; // Tous les posts initiaux
+  List<Post> _posts = [];
+  bool _isLoading = true;
+  bool _hasError = false;
+  String _errorMessage = '';
+  
+  // Pagination
+  int _currentPage = 0;
+  final int _pageSize = 20;
+  bool _hasMorePosts = false;
+  bool _isLoadingMore = false;
 
-   @override
+  @override
   void initState() {
     super.initState();
-    _recommendedPostsFuture = _postsService.getRecommendedPosts().then((result) {
-      _allPosts = result.data ?? [];
-      return result;
-    });
+    _loadPosts(resetList: true);
+  }
+
+  @override
+  void didUpdateWidget(RecommendedPostsSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    
+    // Si le tag a changé, recharger les posts
+    if (oldWidget.selectedTag != widget.selectedTag) {
+      print('Tag changé: ${oldWidget.selectedTag} → ${widget.selectedTag}');
+      _loadPosts(resetList: true);
+    }
+  }
+
+  Future<void> _loadPosts({bool resetList = false, bool loadMore = false}) async {
+    if (loadMore && _isLoadingMore) return;
+    
+    try {
+      if (resetList) {
+        setState(() {
+          _isLoading = true;
+          _hasError = false;
+          _currentPage = 0;
+        });
+      } else if (loadMore) {
+        setState(() {
+          _isLoadingMore = true;
+        });
+      }
+
+      final response = await TagsService.getPostsByTag(
+        widget.selectedTag,
+        limit: _pageSize,
+        offset: resetList ? 0 : (_currentPage + 1) * _pageSize,
+      );
+
+      if (response['posts'] != null) {
+        // Convertir les Map en objets Post
+        List<Post> newPosts = (response['posts'] as List).map((postData) {
+          return Post.fromJson(Map<String, dynamic>.from(postData));
+        }).toList();
+
+        setState(() {
+          if (resetList) {
+            _posts = newPosts;
+            _currentPage = 0;
+          } else {
+            _posts.addAll(newPosts);
+            _currentPage++;
+          }
+          
+          _hasMorePosts = response['has_more'] ?? false;
+          _isLoading = false;
+          _isLoadingMore = false;
+          _hasError = false;
+        });
+
+        print('Posts chargés: ${newPosts.length} (total: ${_posts.length})');
+      }
+    } catch (e) {
+      print('Erreur chargement posts: $e');
+      setState(() {
+        _isLoading = false;
+        _isLoadingMore = false;
+        _hasError = true;
+        _errorMessage = 'Erreur de chargement des posts';
+        if (resetList) {
+          _posts = [];
+        }
+      });
+    }
+  }
+
+  Future<void> _refreshPosts() async {
+    await _loadPosts(resetList: true);
+  }
+
+  void _loadMorePosts() {
+    if (_hasMorePosts && !_isLoadingMore && _posts.length >= _pageSize) {
+      _loadPosts(loadMore: true);
+    }
   }
 
   @override
@@ -36,66 +119,125 @@ class _RecommendedPostsSectionState extends State<RecommendedPostsSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Titre de la section
-        
-        
-        // Grille mosaïque de posts
-        FutureBuilder<PostsResult>(
-          future: _recommendedPostsFuture,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Padding(
-                padding: EdgeInsets.all(32),
-                child: Center(
-                  child: CircularProgressIndicator(color: Colors.black),
-                ),
-              );
-            }
-
-            if (!snapshot.hasData || snapshot.data!.isFailure) {
-              return Padding(
-                padding: const EdgeInsets.all(16),
-                child: Center(
-                  child: Text(
-                    "Aucune recommandation disponible pour le moment.",
-                    style: GoogleFonts.inter(
-                      color: Colors.grey[600],
-                      fontSize: 14,
-                    ),
-                  ),
-                ),
-              );
-            }
-
-            final allPosts = snapshot.data!.data!;
-          final selectedTag = widget.selectedTag.toLowerCase();
-
-          final filteredPosts = selectedTag == 'tous'
-              ? allPosts
-              : allPosts.where((post) =>
-                  post.tags.any((tag) => tag.toLowerCase() == selectedTag)).toList();
-
-          if (filteredPosts.isEmpty) {
-            return Padding(
-              padding: const EdgeInsets.all(16),
-              child: Center(
-                child: Text(
-                  "Aucune publication pour ce tag.",
-                  style: GoogleFonts.inter(
-                    color: Colors.grey[600],
-                    fontSize: 14,
-                  ),
-                ),
-              ),
-            );
-          }
-
-          return _buildMasonryGrid(filteredPosts);
-
-          },
-        ),
-
+        // Contenu principal
+        if (_isLoading && _posts.isEmpty)
+          _buildLoadingState()
+        else if (_hasError && _posts.isEmpty)
+          _buildErrorState()
+        else if (_posts.isEmpty)
+          _buildEmptyState()
+        else
+          _buildPostsGrid(),
       ],
+    );
+  }
+
+  Widget _buildLoadingState() {
+    return const Padding(
+      padding: EdgeInsets.all(32),
+      child: Center(
+        child: CircularProgressIndicator(color: Colors.black),
+      ),
+    );
+  }
+
+  Widget _buildErrorState() {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Center(
+        child: Column(
+          children: [
+            Icon(
+              Icons.error_outline,
+              size: 48,
+              color: Colors.red[300],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              _errorMessage,
+              style: GoogleFonts.inter(
+                color: Colors.grey[600],
+                fontSize: 14,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: _refreshPosts,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.black,
+                foregroundColor: Colors.white,
+              ),
+              child: Text(
+                'Réessayer',
+                style: GoogleFonts.inter(fontSize: 14),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Center(
+        child: Column(
+          children: [
+            Icon(
+              Icons.search_off,
+              size: 48,
+              color: Colors.grey[300],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              widget.selectedTag == 'Tous' 
+                  ? "Aucune recommandation disponible pour le moment."
+                  : "Aucune publication pour ce tag.",
+              style: GoogleFonts.inter(
+                color: Colors.grey[600],
+                fontSize: 14,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPostsGrid() {
+    return RefreshIndicator(
+      onRefresh: _refreshPosts,
+      child: NotificationListener<ScrollNotification>(
+        onNotification: (ScrollNotification scrollInfo) {
+          // Load more quand on arrive près de la fin
+          if (scrollInfo.metrics.pixels >= scrollInfo.metrics.maxScrollExtent * 0.8) {
+            _loadMorePosts();
+          }
+          return false;
+        },
+        child: SingleChildScrollView(
+          child: Column(
+            children: [
+              _buildMasonryGrid(_posts),
+              
+              // Indicateur de chargement pour plus de posts
+              if (_isLoadingMore)
+                const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Center(
+                    child: CircularProgressIndicator(color: Colors.black),
+                  ),
+                ),
+              
+              // Espace final
+              const SizedBox(height: 100),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -135,10 +277,10 @@ class _MasonryGridLayout extends StatelessWidget {
     while (index < posts.length) {
       // Pattern inspiré de la maquette Instagram
       if (index == 0 && posts.length > 2) {
-        // Première ligne: un grand item (2x2) + un normal
+        // Première ligne: un grand item (2x2) + deux normaux
         rows.add(_buildFirstRow(itemWidth, index));
-        index += 2;
-      } else if (index > 0 && index + 1 < posts.length && (index - 2) % 6 == 0) {
+        index += 3;
+      } else if (index > 0 && index + 1 < posts.length && (index - 3) % 6 == 0) {
         // Ligne avec un item large (2x1)
         rows.add(_buildWideRow(itemWidth, index));
         index += 2;
@@ -463,13 +605,5 @@ class _MasonryGridLayout extends StatelessWidget {
   void _onPostTap(Post post) {
     // TODO: Naviguer vers le détail du post
     debugPrint('Tap sur le post: ${post.title}');
-  }
-
-  /// Génère un nombre de likes factice pour la démo
-  int _generateFakeLikes(Post post) {
-    // Utilise l'ID du post et son titre pour générer un nombre cohérent
-    final seed = post.id.hashCode + post.title.hashCode;
-    final random = seed.abs();
-    return 15 + (random % 500); // Entre 15 et 515 likes
   }
 }
