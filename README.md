@@ -22,7 +22,7 @@ Avant de démarrer, assurez-vous d'avoir installé :
 1. Cloner le dépôt :
 
     ```bash
-    git clone https://github.com/ibrahima-eemi/onlyflick.git
+    git clone https://github.com/root-ibrahima/onlyflick.git
     cd onlyflick
     ```
 
